@@ -1,0 +1,23 @@
+# Líneas de las rutas del conductor (3 cifras). Las usan salidas.json y horarios.json. Sale de rutas/*.gpx.
+411
+434
+610
+611
+612
+613
+621
+630
+680
+681
+682
+683
+684
+685
+686
+687
+688
+689
+690
+691
+692
+696

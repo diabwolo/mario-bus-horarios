@@ -1,0 +1,7 @@
+{
+ "s": -0.03,
+ "n": 40.853309,
+ "w": -4.14097,
+ "e": 0.04,
+ "nota": "Rect\u00e1ngulo de las rutas del conductor con margen; lo usa build_paradas.py"
+}

@@ -1,0 +1,125 @@
+# Servidor automático de horarios de Mario-Bus. Funciona en los servidores de GitHub: NO necesita el ordenador de Mario.
+#
+#  * Una vez al día mira un resumen de 1 KB de la fuente oficial del Consorcio. Si no cambió: no descarga, no convierte, no publica.
+#  * Si cambió: descarga el GTFS, lo valida a fondo, lo compara con la última versión buena, genera los 4 JSON, firma el manifiesto
+#    y publica en GitHub Pages SOLO si todo es correcto y COMPLETO. Si algo falla o falta servicio que había antes: no publica
+#    nada y se conserva la última versión (en GitHub Pages sigue lo que había).
+#  * Ejecuciones a mano (Actions → «Horarios Mario-Bus» → Run workflow): ciclo forzado, actualización de PRUEBA controlada
+#    (marcada como prueba; solo la acepta la variante de prueba de la app) o restaurar una versión anterior.
+#  * La clave privada de firma está en Settings → Secrets → HORARIOS_FIRMA_PRIVADA. Nunca se escribe en el repositorio.
+name: Horarios Mario-Bus
+
+on:
+  schedule:
+    - cron: "17 4 * * *"          # una vez al día (04:17 UTC); GitHub puede retrasarla unos minutos
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: "Qué hacer"
+        type: choice
+        default: ciclo
+        options: [ciclo, ciclo_forzado, prueba_controlada, restaurar]
+      version:
+        description: "Solo para «restaurar»: versión de estado/historial/ (p. ej. 20261027)"
+        required: false
+        type: string
+
+concurrency:
+  group: horarios
+  cancel-in-progress: false
+
+permissions:
+  contents: write                  # guardar el estado (estado/) en este mismo repositorio
+  pages: write
+  id-token: write
+
+env:
+  MARIOBUS_ESTRICTO: "1"           # un feed incompleto se RECHAZA, nunca queda «pendiente» ni se publica
+  MARIOBUS_SIN_PARCIALES: "1"      # no existe la aprobación manual de parciales
+  MARIOBUS_CLAVES: ${{ github.workspace }}/claves
+  PYTHONUTF8: "1"
+
+jobs:
+  horarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      # Si las pruebas fallan no se publica NADA (el job se para aquí)
+      - name: Pruebas del servidor
+        run: python tools/tests/test_actualizar_horarios.py
+
+      - name: Clave de firma (desde el secreto)
+        env:
+          CLAVE: ${{ secrets.HORARIOS_FIRMA_PRIVADA }}
+        run: |
+          test -n "$CLAVE" || { echo "::error::Falta el secreto HORARIOS_FIRMA_PRIVADA"; exit 1; }
+          mkdir -p claves
+          printf '%s\n' "$CLAVE" > claves/horarios-firma-privada.pem
+          chmod 600 claves/horarios-firma-privada.pem
+
+      - name: Hacer lo pedido
+        id: trabajo
+        continue-on-error: true      # aunque falle hay que guardar el estado; al final se marca el fallo
+        env:
+          ACCION: ${{ github.event.inputs.accion || 'ciclo' }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          case "$ACCION" in
+            ciclo)             python tools/actualizar_horarios.py --salida estado ;;
+            ciclo_forzado)     python tools/actualizar_horarios.py --salida estado --forzar ;;
+            prueba_controlada) python tools/actualizar_horarios.py --salida estado --prueba-controlada prueba_controlada --motivo "prueba del recorrido servidor-móvil" ;;
+            restaurar)         python tools/actualizar_horarios.py --salida estado --restaurar "$VERSION" ;;
+            *)                 echo "acción desconocida"; exit 1 ;;
+          esac
+
+      - name: Borrar la clave del disco
+        if: always()
+        run: rm -rf claves
+
+      - name: Latido y estado
+        run: date -u +"%Y-%m-%dT%H:%M:%SZ" > estado/ultimo_latido.txt   # también evita que GitHub desactive el programador por inactividad
+
+      - name: ¿Cambió lo publicable?
+        id: cambio
+        run: |
+          git add -A estado
+          if git diff --cached --quiet -- estado/publicable; then echo "cambio=no" >> "$GITHUB_OUTPUT"; else echo "cambio=si" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Guardar el estado en el repositorio
+        run: |
+          git config user.name "servidor-horarios"
+          git config user.email "servidor-horarios@users.noreply.github.com"
+          git commit -m "estado $(date -u +%F) ($(cat estado/ultimo_latido.txt))" || echo "sin cambios que guardar"
+          git push
+
+      - name: Preparar lo que se publica (solo estado/publicable)
+        if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''
+        run: mkdir -p _site && cp -r estado/publicable/. _site/
+
+      - uses: actions/configure-pages@v5
+        if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''
+        with:
+          path: _site
+      - id: pages
+        uses: actions/deploy-pages@v4
+        if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''
+
+      # Si el trabajo falló, el job queda en rojo y GitHub avisa por correo (el estado ya está guardado)
+      - name: Marcar el fallo si lo hubo
+        if: steps.trabajo.outcome == 'failure'
+        run: |
+          echo "::error::El trabajo terminó con rechazo o error: mira el paso «Hacer lo pedido». La última versión publicada se conserva."
+          exit 1

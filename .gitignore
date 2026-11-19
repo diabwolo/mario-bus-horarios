@@ -1,0 +1,6 @@
+claves/
+tools/gtfs/
+__pycache__/
+*.pyc
+*.pem
+*.part
