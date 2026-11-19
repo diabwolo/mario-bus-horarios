@@ -1,0 +1,37 @@
+{
+  "esquema": 2,
+  "secuencia": 1795117458,
+  "generado": "2026-11-19T19:44:18+00:00",
+  "version_gtfs": "20261027",
+  "estado": "PRUEBA_CONTROLADA",
+  "parcial": false,
+  "prueba_controlada": true,
+  "publicable_automaticamente": false,
+  "revision_manual_necesaria": false,
+  "aviso": "ACTUALIZACIÓN DE PRUEBA: son los mismos datos reales que ya lleva la app, republicados para probar la descarga. No es un feed nuevo del Consorcio. Motivo: prueba del recorrido servidor-móvil",
+  "fuente": "https://datos.crtm.es/datasets/885399f83408473c8d815e40c5e702b7",
+  "licencia": "https://crtm.es/licencia-de-uso",
+  "atribucion": "Powered by CRTM · www.crtm.es (datos elaborados)",
+  "archivos": [
+    {
+      "nombre": "horarios.json",
+      "bytes": 129831,
+      "sha256": "af0bff7b16fe6818a776742d1753cd0c43d68d1eca201bc1fc3c9fcba712a783"
+    },
+    {
+      "nombre": "moncloa_islas.json",
+      "bytes": 932970,
+      "sha256": "9002b59b8c43d40d4c5f6d0a2f02b4c45a48dedcf6b11891ac1b7bb1eef27d28"
+    },
+    {
+      "nombre": "paradas.json",
+      "bytes": 462311,
+      "sha256": "0c5a6ec3bd5a13031519e8e4b2abe3ea9720b446aa3babea48b814994af0b823"
+    },
+    {
+      "nombre": "salidas.json",
+      "bytes": 357266,
+      "sha256": "640bf34e03321d9e76412a82360015a897ee856f70923cfc1f4953be9cff84be"
+    }
+  ]
+}
