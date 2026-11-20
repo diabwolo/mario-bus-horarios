@@ -11,7 +11,9 @@ name: Horarios Mario-Bus
 
 on:
   schedule:
-    - cron: "17 4 * * *"          # una vez al día (04:17 UTC); GitHub puede retrasarla unos minutos
+    - cron: "17 4 * * *"          # principal (04:17 UTC = 05:17 en Madrid en invierno); GitHub puede retrasarla o saltársela
+    - cron: "47 15 * * *"         # RESPALDO (15:47 UTC): si el principal falló o llegó tarde. Si ya se comprobó hace <20 h, termina en
+                                  # «OMITIDO» sin descargar ni publicar nada (regla: máximo una comprobación de la fuente cada 20 h)
   workflow_dispatch:
     inputs:
       accion:
@@ -74,14 +76,31 @@ jobs:
         env:
           ACCION: ${{ github.event.inputs.accion || 'ciclo' }}
           VERSION: ${{ github.event.inputs.version }}
+        shell: bash
         run: |
+          set -o pipefail
           case "$ACCION" in
-            ciclo)             python tools/actualizar_horarios.py --salida estado ;;
-            ciclo_forzado)     python tools/actualizar_horarios.py --salida estado --forzar ;;
-            prueba_controlada) python tools/actualizar_horarios.py --salida estado --prueba-controlada prueba_controlada --motivo "prueba del recorrido servidor-móvil" ;;
-            restaurar)         python tools/actualizar_horarios.py --salida estado --restaurar "$VERSION" ;;
+            ciclo)             python tools/actualizar_horarios.py --salida estado 2>&1 | tee salida_trabajo.txt ;;
+            ciclo_forzado)     python tools/actualizar_horarios.py --salida estado --forzar 2>&1 | tee salida_trabajo.txt ;;
+            prueba_controlada) python tools/actualizar_horarios.py --salida estado --prueba-controlada prueba_controlada --motivo "prueba del recorrido servidor-móvil" 2>&1 | tee salida_trabajo.txt ;;
+            restaurar)         python tools/actualizar_horarios.py --salida estado --restaurar "$VERSION" 2>&1 | tee salida_trabajo.txt ;;
             *)                 echo "acción desconocida"; exit 1 ;;
           esac
+
+      # Registro público de cuándo se ejecutó y por qué (schedule = automático; workflow_dispatch = a mano)
+      - name: Registrar la ejecución
+        if: always()
+        env:
+          EVENTO: ${{ github.event_name }}
+          ACCION: ${{ github.event.inputs.accion || 'ciclo' }}
+          RESULTADO_PASO: ${{ steps.trabajo.outcome }}
+          RUN: ${{ github.run_number }}
+          PROGRAMADO: ${{ github.event.schedule }}
+        run: |
+          RES=$(grep -m1 -E "RESULTADO|OMITIDO|SIN_CAMBIOS|SIN_RED|PRUEBA|Restaurada|Publicada" salida_trabajo.txt 2>/dev/null | cut -c1-220 || true)
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ejecución #$RUN | evento=$EVENTO | cron='$PROGRAMADO' | acción=$ACCION | paso=$RESULTADO_PASO | ${RES:-sin resultado}" >> estado/ejecuciones.log
+          tail -n 300 estado/ejecuciones.log > estado/ejecuciones.tmp && mv estado/ejecuciones.tmp estado/ejecuciones.log
+          rm -f salida_trabajo.txt
 
       - name: Borrar la clave del disco
         if: always()

@@ -265,17 +265,47 @@ def resumen_feed(g):
     }
 
 
-def validar(nuevo, anterior, ultima_valida, hoy=None):
+def ultima_oficial(carpetas, salida):
+    """Referencia de VERSIÓN: la última publicación OFICIAL (feed del Consorcio que pasó todas las validaciones). Una
+    PRUEBA_CONTROLADA nunca cuenta: no puede bloquear una actualización oficial. {'version', 'zip_sha256'} o None."""
+    est = leer_json(carpetas.estado, {}) or {}
+    if est.get("ultima_oficial", {}).get("version"):
+        return est["ultima_oficial"]
+    man = leer_json(os.path.join(carpetas.publicable, "manifest.json"), {}) or {}
+    if man.get("estado") in ("COMPLETO", "PARCIAL_APROBADO_MANUALMENTE") and man.get("version_gtfs"):
+        return {"version": man["version_gtfs"], "zip_sha256": man.get("gtfs_zip_sha256")}
+    base = leer_json(ruta_base(salida), {}) or {}
+    if base.get("version"):  # la «última versión buena» inicial (el feed completo de julio)
+        return {"version": base["version"], "zip_sha256": None}
+    return None
+
+
+def validar(nuevo, anterior, ultima_valida, hoy=None, zip_sha=None):
     """(errores, avisos) rápidos: versión, calendario por delante, caída de expediciones. La validación profunda
-    (referencias, horas, servicio por línea y día…) está en validar_gtfs.py y se ejecuta aparte."""
+    (referencias, horas, servicio por línea y día…) está en validar_gtfs.py y se ejecuta aparte.
+    VERSIÓN: ya no se compara con «lo último publicado» sino con la última publicación OFICIAL (`ultima_valida`):
+      · versión menor  → rechazo (no se vuelve atrás);
+      · versión igual  → solo si el ZIP es DISTINTO (feed corregido con el mismo número); el mismo ZIP ya está procesado;
+      · versión mayor  → sigue a la validación de contenido.
+    Cambiar el número de versión NO hace válido un feed: el contenido se compara siempre con la última versión buena."""
     hoy = hoy or datetime.date.today()
     errores, avisos = [], []
     if not nuevo["version"]:
         errores.append("El feed no trae feed_version")
     else:
-        for nombre, ref in (("la del feed de refuerzo", anterior), ("la última publicable", ultima_valida)):
-            if ref and ref.get("version") and nuevo["version"] <= ref["version"]:
-                errores.append(f"La versión {nuevo['version']} no es más nueva que {nombre} ({ref['version']})")
+        if anterior and anterior.get("version") and nuevo["version"] <= anterior["version"]:
+            errores.append(f"La versión {nuevo['version']} no es más nueva que la del feed de refuerzo ({anterior['version']})")
+        ref = ultima_valida
+        if ref and ref.get("version"):
+            if nuevo["version"] < ref["version"]:
+                errores.append(f"La versión {nuevo['version']} es anterior a la última oficial publicada ({ref['version']}): no se vuelve atrás")
+            elif nuevo["version"] == ref["version"]:
+                sha_ref = ref.get("zip_sha256")
+                if zip_sha is None or sha_ref is None or sha_ref == zip_sha:
+                    errores.append(f"La versión {nuevo['version']} no es más nueva que la última oficial publicada ({ref['version']}) "
+                                   "y no es un archivo corregido")
+                else:
+                    avisos.append(f"Misma versión {nuevo['version']} pero archivo distinto: se trata como feed corregido y se valida igual")
     limite = (hoy + datetime.timedelta(days=14)).strftime("%Y%m%d")
     if nuevo["calendario_fin"] < limite:
         errores.append(f"Los calendarios acaban el {nuevo['calendario_fin']}: menos de 14 días por delante")
@@ -340,6 +370,12 @@ def generar_paquete(carpeta_feed, carpeta_antigua, carpeta_salida, hoy, dias=DIA
 
 
 # ---------------------------------------------------------------- manifiesto y verificación del paquete
+def siguiente_secuencia(salida):
+    """Secuencia de publicación: SIEMPRE mayor que la del paquete que hay publicado (aunque dos pasen en el mismo segundo)."""
+    actual = (leer_json(os.path.join(salida, "publicable", "manifest.json"), {}) or {}).get("secuencia", 0)
+    return max(int(time.time()), int(actual) + 1)
+
+
 def escribir_manifiesto(tmp_pkg, nuevo, zip_sha, datasets, version_antigua, avisos, stats, hoy, dias, claves):
     parcial = any(not d["completo"] for d in datasets.values())
     antiguas = sorted({ln for d in datasets.values() for ln in d["lineas_con_datos_antiguos"]})
@@ -348,7 +384,7 @@ def escribir_manifiesto(tmp_pkg, nuevo, zip_sha, datasets, version_antigua, avis
     v = VAL.ventana(hoy, dias)
     manifest = {
         "esquema": ESQUEMA,
-        "secuencia": int(time.time()),  # siempre creciente: la app rechaza una secuencia menor que la que ya tiene
+        "secuencia": siguiente_secuencia(os.path.dirname(tmp_pkg)),  # siempre creciente: la app rechaza una secuencia menor
         "generado": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "version_gtfs": nuevo["version"],
         "gtfs_zip_sha256": zip_sha,
@@ -426,6 +462,10 @@ def instalar_publicable(carpetas, paquete_tmp, publica=None):
     anterior_dest = None
     if os.path.isdir(carpetas.publicable):
         man = leer_json(os.path.join(carpetas.publicable, "manifest.json"), {})
+        # nunca se vuelve a una publicación anterior: la secuencia debe ser MAYOR que la publicada (la app también lo exige)
+        if int(nuevo_man.get("secuencia", 0)) <= int(man.get("secuencia", 0)):
+            raise Rechazo(f"La secuencia {nuevo_man.get('secuencia')} no es mayor que la publicada ({man.get('secuencia')}): "
+                          "no se vuelve a una publicación anterior")
         anterior_dest = _destino_historial(carpetas, man.get("version_gtfs", ""))
     escribir_json_atomico(carpetas.diario, {
         "fase": "preparado", "paquete_tmp": paquete_tmp, "anterior_historial": anterior_dest,
@@ -532,9 +572,8 @@ def procesar_zip(zip_ruta, salida=SALIDA, carpeta_antigua=BASE, generar=generar_
         if estricto:
             carpeta_antigua = os.path.join(TRABAJO, "_sin_feed_antiguo")  # no existe: ni refuerzo ni comparación con julio
         anterior = resumen_feed(carpeta_antigua) if os.path.isdir(carpeta_antigua) else None
-        man_pub = leer_json(os.path.join(carpetas.publicable, "manifest.json"))
-        ultima = {"version": man_pub.get("version_gtfs")} if man_pub else None
-        errores, avisos = validar(nuevo, anterior, ultima, hoy)
+        ultima = ultima_oficial(carpetas, salida)  # una PRUEBA_CONTROLADA publicada no cuenta como referencia de versión
+        errores, avisos = validar(nuevo, anterior, ultima, hoy, zip_sha)
         if errores:
             raise Rechazo("; ".join(errores))
         ev, av, stats = VAL.validar_gtfs(tmp_feed, carpeta_antigua if anterior else None, hoy, dias, lineas_clave, paradas_clave)
@@ -576,6 +615,9 @@ def procesar_zip(zip_ruta, salida=SALIDA, carpeta_antigua=BASE, generar=generar_
                     "actualizado": datetime.datetime.now().astimezone().isoformat(timespec="seconds")})
         if res["estado"] == "COMPLETO":
             est["ultima_version_publicable"] = nuevo["version"]
+            est["ultima_oficial"] = {"version": nuevo["version"], "zip_sha256": zip_sha, "secuencia": manifest["secuencia"],
+                                     "publicada": est["actualizado"]}
+            est["tipo_publicable"] = "OFICIAL"
             est.pop("publicable_es_prueba", None)
         escribir_json_atomico(carpetas.estado, est)
         res["avisos"] = avisos
@@ -602,7 +644,7 @@ def aprobar_parcial(version, salida=SALIDA, claves=None):
         raise Rechazo(f"No hay ningún paquete pendiente de revisión con la versión {version}")
     man = verificar_paquete(origen, publica)
     man.update({"estado": "PARCIAL_APROBADO_MANUALMENTE", "parcial": True, "publicable_automaticamente": False,
-                "revision_manual_necesaria": False, "secuencia": max(int(time.time()), man.get("secuencia", 0) + 1),
+                "revision_manual_necesaria": False, "secuencia": max(siguiente_secuencia(carpetas.salida), man.get("secuencia", 0) + 1),
                 "aprobado_manualmente": datetime.datetime.now().astimezone().isoformat(timespec="seconds")})
     tmp = tempfile.mkdtemp(prefix="aprobado_", dir=carpetas.salida)
     try:
@@ -652,6 +694,14 @@ def restaurar_version(version, salida=SALIDA, claves=None):
     est = leer_json(carpetas.estado, {})
     est["ultima_version_publicable"] = man.get("version_gtfs")
     est["restaurada_de"] = version
+    if man.get("estado") == "COMPLETO":  # restaurar una OFICIAL la vuelve a ser la referencia de versión; una prueba no
+        est["ultima_oficial"] = {"version": man.get("version_gtfs"), "zip_sha256": man.get("gtfs_zip_sha256"), "secuencia": man["secuencia"],
+                                 "publicada": man["restaurada_el"]}
+        est["tipo_publicable"] = "OFICIAL"
+        est.pop("publicable_es_prueba", None)
+    else:
+        est["tipo_publicable"] = "PRUEBA_CONTROLADA"
+        est["publicable_es_prueba"] = True
     escribir_json_atomico(carpetas.estado, est)
     return man
 
@@ -672,7 +722,7 @@ def publicar_prueba_controlada(salida, claves, carpeta_datos, motivo="prueba del
         ahora = datetime.datetime.now().astimezone()
         archivos = [{"nombre": n, "bytes": os.path.getsize(os.path.join(tmp, n)), "sha256": sha256_archivo(os.path.join(tmp, n))} for n in sorted(DATASETS)]
         man = {
-            "esquema": ESQUEMA, "secuencia": int(time.time()), "generado": ahora.isoformat(timespec="seconds"),
+            "esquema": ESQUEMA, "secuencia": siguiente_secuencia(salida), "generado": ahora.isoformat(timespec="seconds"),
             "version_gtfs": islas.get("version", ""), "estado": "PRUEBA_CONTROLADA", "parcial": False,
             "prueba_controlada": True, "publicable_automaticamente": False, "revision_manual_necesaria": False,
             "aviso": "ACTUALIZACIÓN DE PRUEBA: son los mismos datos reales que ya lleva la app, republicados para probar la descarga. "
@@ -687,6 +737,7 @@ def publicar_prueba_controlada(salida, claves, carpeta_datos, motivo="prueba del
         shutil.rmtree(tmp, ignore_errors=True)
     est = leer_json(carpetas.estado, {})
     est["publicable_es_prueba"] = True
+    est["tipo_publicable"] = "PRUEBA_CONTROLADA"
     est["ultima_prueba_controlada"] = man["generado"]
     escribir_json_atomico(carpetas.estado, est)
     return man

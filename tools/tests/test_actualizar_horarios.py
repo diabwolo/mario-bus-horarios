@@ -224,7 +224,6 @@ class TestUltimaVersionValida(Base):
             "corrupto": self._corrupto,
             "truncado": lambda: self.zip("tr.zip", version="20261101", truncar=True),
             "falta_archivo": lambda: self.zip("fa.zip", version="20261102", omitir=("stop_times",)),
-            "misma_version": lambda: self.zip("mv.zip", version="20261027", trips=11),
             "mas_vieja": lambda: self.zip("mo.zip", version="20260101"),
             "calendario_corto": lambda: self.zip("cc.zip", version="20261103", fin="20261120"),
             "caida_expediciones": lambda: self.zip("ce.zip", version="20261104", trips=1),
@@ -639,6 +638,94 @@ class TestRestaurar(Base):
         with self.assertRaises(A.Rechazo):
             A.restaurar_version("20261027", self.salida, self.dir_claves)
         self.assertEqual(self.huella_publicable(), antes)
+
+
+class TestVersiones(Base):
+    """Versión del feed (GTFS) ≠ secuencia de publicación ≠ tipo de paquete (OFICIAL / PRUEBA_CONTROLADA)."""
+
+    def setUp(self):
+        super().setUp()
+        self.base_feed = escribir_feed(os.path.join(self.t, "base"), version="20260723", rutas=("611", "612"), trips=10)
+        A.crear_base(self.base_feed, self.salida, HOY)
+
+    def est(self, nombre, gen=None, **k):
+        k.setdefault("rutas", ("611", "612"))
+        z = self.zip(nombre, **k)
+        return A.procesar_zip(z, self.salida, os.path.join(self.t, "no_existe"), gen or generador(), HOY, self.dir_claves, estricto=True)
+
+    def prueba(self):
+        d = os.path.join(self.t, "datos")
+        os.makedirs(d, exist_ok=True)
+        for n in A.DATASETS:
+            with open(os.path.join(d, n), "w", encoding="utf-8") as f:
+                json.dump({"version": "20261027", "marca": n, "deps": [1], "islas": {"1": {}}}, f)
+        return A.publicar_prueba_controlada(self.salida, self.dir_claves, d, "prueba")
+
+    def test_una_prueba_controlada_no_bloquea_el_feed_oficial_con_la_misma_version(self):
+        self.prueba()  # publicada con versión 20261027
+        r = self.est("oficial.zip", version="20261027", trips=10)  # el feed oficial trae ese mismo número
+        self.assertEqual(r["estado"], "COMPLETO", r)
+        self.assertEqual(self.manifest("publicable")["estado"], "COMPLETO")
+        self.assertEqual(self.estado()["tipo_publicable"], "OFICIAL")
+
+    def test_feed_corregido_con_el_mismo_numero_de_version_se_publica(self):
+        self.assertEqual(self.est("a.zip", version="20261027", trips=10)["estado"], "COMPLETO")
+        r = self.est("b.zip", version="20261027", trips=11)  # archivo DISTINTO, mismo número, completo
+        self.assertEqual(r["estado"], "COMPLETO", r)
+        self.assertTrue(any("feed corregido" in a for a in r["avisos"]))
+
+    def test_el_mismo_archivo_no_se_vuelve_a_publicar(self):
+        z = self.zip("a.zip", version="20261027", rutas=("611", "612"))
+        args = (self.salida, os.path.join(self.t, "no_existe"), generador(), HOY, self.dir_claves)
+        self.assertEqual(A.procesar_zip(z, *args, estricto=True)["estado"], "COMPLETO")
+        self.assertEqual(A.procesar_zip(z, *args, estricto=True)["estado"], "YA_PROCESADO")
+
+    def test_una_version_anterior_a_la_oficial_se_rechaza(self):
+        self.assertEqual(self.est("a.zip", version="20261201")["estado"], "COMPLETO")
+        antes = self.huella_publicable()
+        r = self.est("b.zip", version="20261027", trips=11)
+        self.assertEqual(r["estado"], "RECHAZADO", r)
+        self.assertIn("no se vuelve atrás", r["mensaje"])
+        self.assertEqual(self.huella_publicable(), antes)
+
+    def test_cambiar_el_numero_de_version_no_hace_valido_un_feed_incompleto(self):
+        self.prueba()
+        antes = self.huella_publicable()
+        for v in ("20261027", "20261028", "20270101"):  # incompleto (falta la 612) con cualquier número de versión
+            r = self.est(f"i{v}.zip", version=v, rutas=("611",))
+            self.assertEqual(r["estado"], "RECHAZADO", (v, r))
+            self.assertIn("612", r["mensaje"])
+        self.assertEqual(self.huella_publicable(), antes)  # la publicación válida (aquí la prueba) no se tocó
+        self.assertEqual(self.manifest("publicable")["estado"], "PRUEBA_CONTROLADA")
+
+    def test_la_secuencia_siempre_crece_aunque_dos_publicaciones_ocurran_en_el_mismo_segundo(self):
+        s = [self.prueba()["secuencia"], self.est("a.zip", version="20261027")["estado"] and self.manifest("publicable")["secuencia"],
+             self.prueba()["secuencia"]]
+        self.assertTrue(s[0] < s[1] < s[2], s)
+
+    def test_no_se_instala_un_paquete_con_secuencia_menor_o_igual(self):
+        self.prueba()
+        actual = self.manifest("publicable")["secuencia"]
+        tmp = os.path.join(self.salida, "paquete_viejo")
+        shutil.copytree(os.path.join(self.salida, "publicable"), tmp)
+        m = A.leer_json(os.path.join(tmp, "manifest.json"))
+        m["secuencia"] = actual - 5
+        A.escribir_json_atomico(os.path.join(tmp, "manifest.json"), m)
+        carpetas = A.Carpetas(self.salida)
+        antes = self.huella_publicable()
+        with self.assertRaises(A.Rechazo):
+            A.instalar_publicable(carpetas, tmp)
+        self.assertEqual(self.huella_publicable(), antes)
+
+    def test_los_paquetes_de_prueba_se_identifican_y_se_pueden_restaurar_las_oficiales(self):
+        self.assertEqual(self.est("a.zip", version="20261027")["estado"], "COMPLETO")
+        self.prueba()
+        self.assertEqual(self.estado()["tipo_publicable"], "PRUEBA_CONTROLADA")
+        self.assertEqual(self.manifest("publicable")["estado"], "PRUEBA_CONTROLADA")
+        m = A.restaurar_version("20261027", self.salida, self.dir_claves)  # vuelve a una oficial válida (con secuencia nueva)
+        self.assertEqual(m["estado"], "COMPLETO")
+        self.assertEqual(self.estado()["tipo_publicable"], "OFICIAL")
+        A.verificar_paquete(os.path.join(self.salida, "publicable"), self.publica)
 
 
 class TestCicloDiario(Base):
