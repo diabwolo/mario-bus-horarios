@@ -42,6 +42,14 @@ Consorcio Regional de Transportes de Madrid (CRTM). Funciona sin el ordenador de
 - Si la clave se perdiera o se filtrara: generar otra (`python tools/firma_manifiesto.py --generar-claves`), cambiar el secreto y sacar una versión
   de la app con la nueva clave pública (la app admite una lista de claves para el relevo).
 
+## Fiabilidad de las ejecuciones automáticas
+- Los cron de GitHub se retrasan o se saltan (medido el 20/11: el de las 04:17 UTC corrió a las 13:07 UTC). Por eso hay 5 disparadores
+  al día (01:11, 04:17, 08:43, 15:47 y 21:29 UTC): la regla de «una comprobación real cada 20 h» hace que solo uno trabaje y los demás
+  terminen en «OMITIDO». Cada ejecución queda anotada en `estado/ejecuciones.log` (evento, origen, resultado).
+- Respaldo externo independiente de GitHub (opcional, gratuito): ver `docs/RESPALDO_EXTERNO.md`.
+- Ejecución desde git, sin botones: editar `disparar/accion.txt` (línea 1: ciclo, ciclo_forzado, prueba_controlada o restaurar; línea 2: versión
+  para restaurar) y subirlo.
+
 ## Mantenimiento
 - Mirar de vez en cuando la pestaña **Actions**: cada día debe haber una ejecución. «SIN_CAMBIOS» o «OMITIDO» es lo normal.
 - Si una ejecución sale en rojo por «Servicio que había y ya no está»: es que el Consorcio publicó un feed incompleto. No hay que hacer nada;
