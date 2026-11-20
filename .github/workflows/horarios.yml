@@ -11,9 +11,14 @@ name: Horarios Mario-Bus
 
 on:
   schedule:
-    - cron: "17 4 * * *"          # principal (04:17 UTC = 05:17 en Madrid en invierno); GitHub puede retrasarla o saltársela
-    - cron: "47 15 * * *"         # RESPALDO (15:47 UTC): si el principal falló o llegó tarde. Si ya se comprobó hace <20 h, termina en
-                                  # «OMITIDO» sin descargar ni publicar nada (regla: máximo una comprobación de la fuente cada 20 h)
+    # GitHub retrasa o se salta los cron (medido: el de las 04:17 UTC corrió a las 13:07 UTC). Por eso hay varios disparadores a lo
+    # largo del día: cada uno que llegue comprueba, y si ya se comprobó hace <20 h termina en «OMITIDO» sin descargar ni publicar nada
+    # (regla: como máximo UNA comprobación real de la fuente oficial cada 20 h, pase lo que pase con los disparadores).
+    - cron: "11 1 * * *"
+    - cron: "17 4 * * *"          # principal (04:17 UTC = 05:17 en Madrid en invierno)
+    - cron: "43 8 * * *"
+    - cron: "47 15 * * *"
+    - cron: "29 21 * * *"
   push:                            # disparo desde git (sin pulsar botones): cambiar disparar/accion.txt y subirlo
     paths: ["disparar/**"]
   workflow_dispatch:
@@ -26,6 +31,11 @@ on:
       version:
         description: "Solo para «restaurar»: versión de estado/historial/ (p. ej. 20261027)"
         required: false
+        type: string
+      origen:
+        description: "Quién lo dispara (se anota en el registro): manual, respaldo-externo…"
+        required: false
+        default: manual
         type: string
 
 concurrency:
@@ -104,10 +114,11 @@ jobs:
           RESULTADO_PASO: ${{ steps.trabajo.outcome }}
           RUN: ${{ github.run_number }}
           PROGRAMADO: ${{ github.event.schedule }}
+          ORIGEN: ${{ github.event.inputs.origen }}
         run: |
           ACCION=$(cat accion_elegida.txt 2>/dev/null || echo ciclo)
           RES=$(grep -m1 -E "RESULTADO|OMITIDO|SIN_CAMBIOS|SIN_RED|PRUEBA|Restaurada|Publicada" salida_trabajo.txt 2>/dev/null | cut -c1-220 || true)
-          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ejecución #$RUN | evento=$EVENTO | cron='$PROGRAMADO' | acción=$ACCION | paso=$RESULTADO_PASO | ${RES:-sin resultado}" >> estado/ejecuciones.log
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ejecución #$RUN | evento=$EVENTO | origen=${ORIGEN:--} | cron='$PROGRAMADO' | acción=$ACCION | paso=$RESULTADO_PASO | ${RES:-sin resultado}" >> estado/ejecuciones.log
           tail -n 300 estado/ejecuciones.log > estado/ejecuciones.tmp && mv estado/ejecuciones.tmp estado/ejecuciones.log
           rm -f salida_trabajo.txt accion_elegida.txt
 
