@@ -21,17 +21,8 @@ on:
     - cron: "29 21 * * *"
   push:                            # disparo desde git (sin pulsar botones): cambiar disparar/accion.txt y subirlo
     paths: ["disparar/**"]
-  workflow_dispatch:
+  workflow_dispatch:                 # lo usa cron-job.org (respaldo): SOLO puede hacer el ciclo normal; no admite «acción» ni «versión»
     inputs:
-      accion:
-        description: "Qué hacer"
-        type: choice
-        default: ciclo
-        options: [ciclo, ciclo_forzado, prueba_controlada, restaurar]
-      version:
-        description: "Solo para «restaurar»: versión de estado/historial/ (p. ej. 20261027)"
-        required: false
-        type: string
       origen:
         description: "Quién lo dispara (se anota en el registro): manual, respaldo-externo…"
         required: false
@@ -86,16 +77,22 @@ jobs:
         id: trabajo
         continue-on-error: true      # aunque falle hay que guardar el estado; al final se marca el fallo
         env:
-          ACCION: ${{ github.event.inputs.accion }}
-          VERSION: ${{ github.event.inputs.version }}
           EVENTO: ${{ github.event_name }}
+          ORIGEN_ENTRADA: ${{ github.event.inputs.origen }}
         shell: bash
         run: |
           set -o pipefail
+          ACCION=ciclo
+          VERSION=""
+          # Las acciones EXTRAORDINARIAS (forzar, prueba, restaurar) se leen SOLO de disparar/accion.txt y SOLO cuando el evento es un
+          # «push» (hace falta poder escribir en el repositorio; el token de cron-job.org no puede). Un cron o una llamada a la API
+          # (cron-job.org) hacen siempre y únicamente el ciclo normal. Python lo vuelve a comprobar con estas dos variables.
           if [ "$EVENTO" = "push" ] && [ -f disparar/accion.txt ]; then
             ACCION=$(head -n1 disparar/accion.txt | tr -d ' \r\n')
             VERSION=$(sed -n 2p disparar/accion.txt | tr -d ' \r\n')
           fi
+          export MARIOBUS_EVENTO="$EVENTO"
+          export MARIOBUS_ORIGEN="${ORIGEN_ENTRADA:-$EVENTO}"
           ACCION="${ACCION:-ciclo}"
           echo "$ACCION" > accion_elegida.txt
           case "$ACCION" in

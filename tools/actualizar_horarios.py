@@ -136,11 +136,25 @@ def metadatos_fuente(abrir=urllib.request.urlopen):
     return {"modified": int(datos["modified"]), "size": int(datos["size"])}
 
 
+# Recuperación tras un FALLO (descarga cortada, error inesperado…): un fallo NO es una comprobación correcta, así que no obliga a esperar
+# otras 20 h. Se reintenta pronto, pero con tope para no machacar la fuente oficial: espera mínima entre intentos fallidos y, tras
+# MAX_INTENTOS_FALLIDOS seguidos, se vuelve a la espera normal de 20 h. La regla de «una comprobación CORRECTA cada 20 h» no cambia.
+MIN_HORAS_REINTENTO_TRAS_FALLO = 3
+MAX_INTENTOS_FALLIDOS = 3
+
+
 def decidir(estado, ahora, meta=None, min_horas=MIN_HORAS_ENTRE_COMPROBACIONES):
-    """('OMITIR_RECIENTE' | 'OMITIR_SIN_CAMBIOS' | 'DESCARGAR', motivo). No toca la red."""
+    """('OMITIR_RECIENTE' | 'OMITIR_TRAS_FALLO' | 'OMITIR_SIN_CAMBIOS' | 'DESCARGAR', motivo). No toca la red.
+    `ultima_comprobacion` es solo de comprobaciones CORRECTAS (sin novedades, publicada o rechazada por su contenido)."""
     ultima = estado.get("ultima_comprobacion")
     if ultima is not None and ahora - ultima < min_horas * 3600:
         return "OMITIR_RECIENTE", f"ya se comprobó hace menos de {min_horas} h"
+    fallos = int(estado.get("fallos_seguidos") or 0)
+    intento = estado.get("ultimo_intento")
+    if fallos > 0 and intento is not None:
+        espera = min_horas if fallos >= MAX_INTENTOS_FALLIDOS else MIN_HORAS_REINTENTO_TRAS_FALLO
+        if ahora - intento < espera * 3600:
+            return "OMITIR_TRAS_FALLO", f"el último intento falló hace menos de {espera} h ({fallos} fallo(s) seguido(s)): se reintentará más tarde"
     if meta is not None and estado.get("fuente_meta") == meta:
         return "OMITIR_SIN_CAMBIOS", "la fuente oficial no ha cambiado (misma fecha y tamaño): no se descarga ni se convierte nada"
     return "DESCARGAR", "la fuente es nueva o cambió"
@@ -155,31 +169,41 @@ def ciclo_diario(salida, procesar, ahora=None, forzar=False, abrir_meta=metadato
     carpetas = Carpetas(salida)
     estado = leer_json(carpetas.estado, {})
     accion, motivo = decidir(estado, ahora) if not forzar else ("DESCARGAR", "forzado")
-    if accion == "OMITIR_RECIENTE":
-        return {"estado": "OMITIDO", "mensaje": motivo, "descargado": False}
+    if accion in ("OMITIR_RECIENTE", "OMITIR_TRAS_FALLO"):
+        return {"estado": "OMITIDO", "mensaje": motivo, "descargado": False, "tipo": "OMITIDO"}
     try:
         meta = abrir_meta()
-    except Exception as e:  # sin red o fuente caída: no se anota nada, se vuelve a mirar mañana
-        return {"estado": "SIN_RED", "mensaje": f"No se pudo consultar la fuente oficial: {e}", "descargado": False}
+    except Exception as e:  # sin red o fuente caída: no se anota nada, se vuelve a mirar en el siguiente disparo
+        return {"estado": "SIN_RED", "mensaje": f"No se pudo consultar la fuente oficial: {e}", "descargado": False, "tipo": "ERROR_DE_CONEXION"}
     if not forzar:
         accion, motivo = decidir(estado, ahora, meta)
     estado = leer_json(carpetas.estado, {})
-    estado["ultima_comprobacion"] = ahora
-    if accion == "OMITIR_SIN_CAMBIOS":
+    if accion == "OMITIR_SIN_CAMBIOS":  # comprobación CORRECTA sin novedades
+        estado["ultima_comprobacion"] = ahora
+        estado["fallos_seguidos"] = 0
         escribir_json_atomico(carpetas.estado, estado)
-        return {"estado": "SIN_CAMBIOS", "mensaje": motivo, "descargado": False}
+        return {"estado": "SIN_CAMBIOS", "mensaje": motivo, "descargado": False, "tipo": "SIN_NOVEDADES"}
+    # Se va a descargar: se anota el INTENTO antes de empezar y de forma pesimista (cuenta como fallo). Así, si el trabajo se
+    # corta a mitad (tiempo agotado, apagón del servidor…), también queda contado y no se reintenta sin espera. Solo una comprobación
+    # CORRECTA (más abajo) pone `ultima_comprobacion` y vuelve el contador de fallos a cero.
+    estado["ultimo_intento"] = ahora
+    estado["fallos_seguidos"] = int(estado.get("fallos_seguidos") or 0) + 1
     escribir_json_atomico(carpetas.estado, estado)
     try:
         ruta = descargar()
-    except Rechazo as e:  # descarga cortada o ZIP roto: transitorio, no se anota la fuente
-        return {"estado": "RECHAZADO", "mensaje": str(e), "descargado": True, "transitorio": True}
+    except Rechazo as e:  # descarga cortada o ZIP roto: FALLO (no es comprobación correcta); se reintentará pronto
+        return {"estado": "RECHAZADO", "mensaje": str(e), "descargado": True, "transitorio": True, "tipo": "ERROR_DE_DESCARGA"}
     res = procesar(ruta)
     res["descargado"] = True
+    if res.get("transitorio") or res.get("inesperado"):  # fallo real: no se marca la fuente ni la comprobación como hechas
+        res["tipo"] = "ERROR_INESPERADO" if res.get("inesperado") else "ERROR_DE_DESCARGA"
+        return res
     estado = leer_json(carpetas.estado, {})
     estado["ultima_comprobacion"] = ahora
-    if not res.get("transitorio"):
-        estado["fuente_meta"] = meta  # procesado (o rechazado por su contenido): no se vuelve a trabajar hasta que la fuente cambie
+    estado["fallos_seguidos"] = 0
+    estado["fuente_meta"] = meta  # procesado (o rechazado por su CONTENIDO): no se vuelve a trabajar hasta que la fuente cambie
     escribir_json_atomico(carpetas.estado, estado)
+    res["tipo"] = "VALIDACION_DEL_CONTENIDO" if res.get("estado") == "RECHAZADO" else "PUBLICADO_O_PROCESADO"
     return res
 
 
@@ -622,10 +646,12 @@ def procesar_zip(zip_ruta, salida=SALIDA, carpeta_antigua=BASE, generar=generar_
         escribir_json_atomico(carpetas.estado, est)
         res["avisos"] = avisos
         return res
-    except (Rechazo, FIRMA.ErrorFirma) as e:
+    except Rechazo as e:  # el CONTENIDO del feed no es válido: es una comprobación correcta cuyo resultado es «no se publica»
         return {"estado": "RECHAZADO", "mensaje": str(e)}
-    except Exception as e:  # cualquier fallo inesperado: no se cambia nada
-        return {"estado": "RECHAZADO", "mensaje": f"Error inesperado ({type(e).__name__}): {e}"}
+    except FIRMA.ErrorFirma as e:  # falta/está mal la clave de firma: problema NUESTRO, no del feed → se reintentará (no se anota la fuente)
+        return {"estado": "RECHAZADO", "mensaje": f"Error de firma: {e}", "inesperado": True}
+    except Exception as e:  # cualquier fallo inesperado: no se cambia nada y NO se da por comprobada la fuente
+        return {"estado": "RECHAZADO", "mensaje": f"Error inesperado ({type(e).__name__}): {e}", "inesperado": True}
     finally:
         for t in temporales:
             shutil.rmtree(t, ignore_errors=True)
@@ -714,6 +740,13 @@ def publicar_prueba_controlada(salida, claves, carpeta_datos, motivo="prueba del
     carpetas = Carpetas(salida)
     publica = FIRMA.publica_de(claves)
     recuperar(carpetas, publica)
+    # Una prueba NUNCA sustituye a una publicación OFICIAL (ni a algo ilegible que podría serlo): solo puede ir sobre otra prueba o
+    # sobre nada. (Protección en el código, no solo en el workflow.)
+    if os.path.isdir(carpetas.publicable):
+        man_pub = leer_json(os.path.join(carpetas.publicable, "manifest.json"), {}) or {}
+        if man_pub.get("estado") != "PRUEBA_CONTROLADA":
+            raise Rechazo("Hay una publicación OFICIAL (estado «%s», versión %s) o no se puede leer: una prueba controlada no puede sustituirla"
+                          % (man_pub.get("estado", "ilegible"), man_pub.get("version_gtfs", "?")))
     tmp = tempfile.mkdtemp(prefix="paquete_", dir=salida)
     try:
         for n in DATASETS:
@@ -817,9 +850,37 @@ def autotest():
 
 
 def imprimir(res):
-    print("RESULTADO:", res["estado"], "·", res.get("mensaje", ""))
+    tipo = f" [{res['tipo']}]" if res.get("tipo") else ""
+    print("RESULTADO:", res["estado"] + tipo, "·", res.get("mensaje", ""))
     for a in res.get("avisos", []):
         print("AVISO:", a)
+
+
+# ---------------------------------------------------------------- quién puede pedir qué (protección del respaldo externo)
+# Acciones EXTRAORDINARIAS: cambian lo publicado de forma no rutinaria (restaurar, publicar una prueba, forzar una descarga, aprobar un
+# parcial, rehacer la base de referencia). Solo se permiten desde un `git push` (evento «push» de GitHub: exige poder escribir en el
+# repositorio, lo que el token del respaldo externo NO tiene) o a mano en local (sin variable MARIOBUS_EVENTO). Desde un cron
+# («schedule») o una llamada a la API («workflow_dispatch», que es lo que usa cron-job.org) solo se permite el CICLO NORMAL. El evento
+# lo pone GitHub y quien llama a la API no puede falsearlo; el «origen» que escribe el llamante solo se usa para endurecer más.
+ACCIONES_EXTRAORDINARIAS = {
+    "--forzar": "ciclo forzado", "--prueba-controlada": "publicación de prueba", "--restaurar": "restauración",
+    "--aprobar-parcial": "aprobación de parciales", "--crear-base": "rehacer la base de referencia",
+}
+EVENTOS_CON_PERMISO = ("push",)
+ORIGENES_SIN_PERMISO = ("respaldo-externo",)
+
+
+def acciones_no_permitidas(args, evento=None, origen=None):
+    """None si todo está permitido; si no, el motivo (texto). `evento` = github.event_name (variable MARIOBUS_EVENTO) o None (uso local);
+    `origen` = quien dice disparar (variable MARIOBUS_ORIGEN, solo informativo/endurecedor)."""
+    pedidas = [nombre for flag, nombre in ACCIONES_EXTRAORDINARIAS.items() if flag in args]
+    if not pedidas:
+        return None  # ciclo normal: lo puede pedir cualquiera
+    if origen in ORIGENES_SIN_PERMISO:
+        return f"el origen «{origen}» solo puede ejecutar el ciclo normal (pidió: {', '.join(pedidas)})"
+    if evento is not None and evento not in EVENTOS_CON_PERMISO:
+        return f"desde el evento «{evento}» solo se puede ejecutar el ciclo normal (pidió: {', '.join(pedidas)})"
+    return None
 
 
 def _opt(args, nombre, defecto=None):
@@ -833,6 +894,10 @@ def main():
     zip_arg = _opt(args, "--zip")
     hoy = datetime.date.fromisoformat(_opt(args, "--hoy")) if "--hoy" in args else datetime.date.today()
     dias = int(_opt(args, "--dias", DIAS_VENTANA))
+    prohibido = acciones_no_permitidas(args, os.environ.get("MARIOBUS_EVENTO"), os.environ.get("MARIOBUS_ORIGEN"))
+    if prohibido:  # antes de tocar nada
+        print("RESULTADO: RECHAZADO · acción no permitida:", prohibido)
+        return 1
     if "--autotest" in args:
         return autotest()
     if "--estado" in args:

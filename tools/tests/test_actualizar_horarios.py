@@ -107,6 +107,30 @@ def apaga_en(hito):
     return gancho
 
 
+def ejecutar_main(salida, claves, args, evento=None, origen=None):
+    """Ejecuta A.main() como lo haría el workflow: con el EVENTO real de GitHub y el ORIGEN en variables de entorno.
+    Devuelve (código de salida, texto impreso)."""
+    import contextlib
+    import io
+    entorno, argv = dict(os.environ), sys.argv
+    try:
+        for k in ("MARIOBUS_EVENTO", "MARIOBUS_ORIGEN"):
+            os.environ.pop(k, None)
+        if evento:
+            os.environ["MARIOBUS_EVENTO"] = evento
+        if origen:
+            os.environ["MARIOBUS_ORIGEN"] = origen
+        sys.argv = ["actualizar_horarios.py", "--salida", salida, "--claves", claves] + list(args)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            codigo = A.main()
+        return codigo, out.getvalue()
+    finally:
+        sys.argv = argv
+        os.environ.clear()
+        os.environ.update(entorno)
+
+
 class Base(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -597,9 +621,11 @@ class TestPruebaControlada(Base):
         self.assertEqual(r["estado"], "COMPLETO", r)
         self.assertNotIn("publicable_es_prueba", self.estado())
 
-    def test_la_prueba_guarda_la_anterior_en_historial(self):
-        self.proc(self.zip("n.zip"))
-        A.publicar_prueba_controlada(self.salida, self.dir_claves, self.datos(), "prueba")
+    def test_la_prueba_guarda_la_prueba_anterior_en_historial(self):
+        # (una prueba solo puede ir sobre otra prueba o sobre nada: nunca sobre una publicación oficial)
+        datos = self.datos()
+        A.publicar_prueba_controlada(self.salida, self.dir_claves, datos, "prueba 1")
+        A.publicar_prueba_controlada(self.salida, self.dir_claves, datos, "prueba 2")
         self.assertEqual(len(os.listdir(os.path.join(self.salida, "historial"))), 1)
 
     def test_el_manifiesto_dice_que_no_es_publicable_automaticamente(self):
@@ -699,8 +725,8 @@ class TestVersiones(Base):
         self.assertEqual(self.manifest("publicable")["estado"], "PRUEBA_CONTROLADA")
 
     def test_la_secuencia_siempre_crece_aunque_dos_publicaciones_ocurran_en_el_mismo_segundo(self):
-        s = [self.prueba()["secuencia"], self.est("a.zip", version="20261027")["estado"] and self.manifest("publicable")["secuencia"],
-             self.prueba()["secuencia"]]
+        s = [self.prueba()["secuencia"], self.prueba()["secuencia"],
+             self.est("a.zip", version="20261027")["estado"] and self.manifest("publicable")["secuencia"]]
         self.assertTrue(s[0] < s[1] < s[2], s)
 
     def test_no_se_instala_un_paquete_con_secuencia_menor_o_igual(self):
@@ -717,15 +743,165 @@ class TestVersiones(Base):
             A.instalar_publicable(carpetas, tmp)
         self.assertEqual(self.huella_publicable(), antes)
 
-    def test_los_paquetes_de_prueba_se_identifican_y_se_pueden_restaurar_las_oficiales(self):
-        self.assertEqual(self.est("a.zip", version="20261027")["estado"], "COMPLETO")
+    def test_los_paquetes_de_prueba_se_identifican(self):
         self.prueba()
         self.assertEqual(self.estado()["tipo_publicable"], "PRUEBA_CONTROLADA")
         self.assertEqual(self.manifest("publicable")["estado"], "PRUEBA_CONTROLADA")
+
+    def test_se_pueden_restaurar_las_oficiales(self):
+        self.assertEqual(self.est("a.zip", version="20261027")["estado"], "COMPLETO")
+        self.assertEqual(self.est("b.zip", version="20261201")["estado"], "COMPLETO")
         m = A.restaurar_version("20261027", self.salida, self.dir_claves)  # vuelve a una oficial válida (con secuencia nueva)
         self.assertEqual(m["estado"], "COMPLETO")
         self.assertEqual(self.estado()["tipo_publicable"], "OFICIAL")
         A.verificar_paquete(os.path.join(self.salida, "publicable"), self.publica)
+
+
+class TestProteccionDelRespaldo(Base):
+    """El respaldo externo (cron-job.org) solo puede iniciar el ciclo NORMAL. Quien llama a la API escribe el «origen» (puede mentir):
+    manda el EVENTO real de GitHub, y solo un `push` (que exige poder escribir en el repositorio) o el uso local pueden lo extraordinario."""
+
+    EXTRA = [["--forzar"], ["--prueba-controlada", "x"], ["--restaurar", "20261027"],
+             ["--aprobar-parcial", "20261027", "--si-estoy-seguro"], ["--crear-base", "x"]]
+
+    def test_el_ciclo_normal_esta_permitido_desde_cualquier_origen(self):
+        for ev in (None, "schedule", "workflow_dispatch", "push"):
+            for og in (None, "respaldo-externo", "manual", "push"):
+                self.assertIsNone(A.acciones_no_permitidas(["--salida", "estado"], ev, og), (ev, og))
+
+    def test_el_respaldo_externo_no_puede_nada_extraordinario_con_ningun_evento(self):
+        for extra in self.EXTRA:
+            for ev in (None, "schedule", "workflow_dispatch", "push"):
+                self.assertIsNotNone(A.acciones_no_permitidas(extra, ev, "respaldo-externo"), (extra, ev))
+
+    def test_api_y_cron_no_pueden_aunque_mientan_en_el_origen(self):
+        for extra in self.EXTRA:
+            for ev in ("schedule", "workflow_dispatch"):
+                for og in (None, "manual", "push", "respaldo-externo"):
+                    self.assertIsNotNone(A.acciones_no_permitidas(extra, ev, og), (extra, ev, og))
+
+    def test_solo_un_push_o_el_uso_local_pueden_lo_extraordinario(self):
+        for extra in self.EXTRA:
+            self.assertIsNone(A.acciones_no_permitidas(extra, "push", "push"))
+            self.assertIsNone(A.acciones_no_permitidas(extra, None, None))
+
+    def test_de_extremo_a_extremo_el_respaldo_no_puede_restaurar_ni_publicar_pruebas_ni_forzar(self):
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261027"))["estado"], "COMPLETO")
+        self.assertEqual(self.proc(self.zip("b.zip", version="20261201"))["estado"], "COMPLETO")
+        antes, hist = self.huella_publicable(), sorted(os.listdir(os.path.join(self.salida, "historial")))
+        estado_antes = self.estado()
+        pruebas = [["--restaurar", "20261027"], ["--prueba-controlada", os.path.join(self.t, "datos")], ["--forzar"]]
+        for args in pruebas:
+            for ev, og in (("workflow_dispatch", "respaldo-externo"), ("workflow_dispatch", "manual"), ("schedule", None)):
+                codigo, texto = ejecutar_main(self.salida, self.dir_claves, args, ev, og)
+                self.assertEqual(codigo, 1, (args, ev, og, texto))
+                self.assertIn("acción no permitida", texto)
+        self.assertEqual(self.huella_publicable(), antes)  # lo publicado, intacto
+        self.assertEqual(sorted(os.listdir(os.path.join(self.salida, "historial"))), hist)
+        self.assertEqual(self.estado(), estado_antes)  # ni siquiera se tocó el estado
+
+    def test_control_positivo_un_push_si_puede_restaurar(self):
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261027"))["estado"], "COMPLETO")
+        self.assertEqual(self.proc(self.zip("b.zip", version="20261201"))["estado"], "COMPLETO")
+        codigo, texto = ejecutar_main(self.salida, self.dir_claves, ["--restaurar", "20261027"], "push", "push")
+        self.assertEqual(codigo, 0, texto)
+        self.assertEqual(self.manifest("publicable")["version_gtfs"], "20261027")
+
+
+class TestPruebaNoPisaOficial(Base):
+    """Una publicación de prueba NUNCA sustituye a una publicación oficial (protección en el código Python)."""
+
+    def datos(self):
+        d = os.path.join(self.t, "datos")
+        os.makedirs(d, exist_ok=True)
+        for n in A.DATASETS:
+            with open(os.path.join(d, n), "w", encoding="utf-8") as f:
+                json.dump({"version": "20261027", "marca": n, "deps": [1], "islas": {"1": {}}}, f)
+        return d
+
+    def test_no_sustituye_una_publicacion_oficial(self):
+        self.assertEqual(self.proc(self.zip("a.zip"))["estado"], "COMPLETO")
+        antes = self.huella_publicable()
+        with self.assertRaises(A.Rechazo) as cm:
+            A.publicar_prueba_controlada(self.salida, self.dir_claves, self.datos(), "intento")
+        self.assertIn("OFICIAL", str(cm.exception))
+        self.assertEqual(self.huella_publicable(), antes)
+        self.assertEqual(self.estado()["tipo_publicable"], "OFICIAL")
+        self.assertEqual(os.listdir(os.path.join(self.salida, "historial")), [])  # tampoco se movió nada al historial
+
+    def test_tampoco_por_la_linea_de_ordenes_ni_siquiera_desde_un_push(self):
+        self.assertEqual(self.proc(self.zip("a.zip"))["estado"], "COMPLETO")
+        antes = self.huella_publicable()
+        codigo, texto = ejecutar_main(self.salida, self.dir_claves, ["--prueba-controlada", self.datos()], "push", "push")
+        self.assertEqual(codigo, 1, texto)
+        self.assertIn("OFICIAL", texto)
+        self.assertEqual(self.huella_publicable(), antes)
+
+    def test_un_manifiesto_ilegible_tampoco_se_pisa(self):
+        self.assertEqual(self.proc(self.zip("a.zip"))["estado"], "COMPLETO")
+        with open(os.path.join(self.salida, "publicable", "manifest.json"), "w") as f:
+            f.write("basura")
+        antes = self.huella_publicable()
+        with self.assertRaises(A.Rechazo):
+            A.publicar_prueba_controlada(self.salida, self.dir_claves, self.datos(), "intento")
+        self.assertEqual(self.huella_publicable(), antes)
+
+    def test_si_se_puede_sobre_nada_y_sobre_otra_prueba(self):
+        self.assertEqual(A.publicar_prueba_controlada(self.salida, self.dir_claves, self.datos(), "1")["estado"], "PRUEBA_CONTROLADA")
+        self.assertEqual(A.publicar_prueba_controlada(self.salida, self.dir_claves, self.datos(), "2")["estado"], "PRUEBA_CONTROLADA")
+
+    def test_un_feed_oficial_si_sustituye_a_una_prueba(self):
+        A.publicar_prueba_controlada(self.salida, self.dir_claves, self.datos(), "1")
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261201"))["estado"], "COMPLETO")
+        self.assertEqual(self.manifest("publicable")["estado"], "COMPLETO")
+
+
+class TestClasificacionDeErrores(Base):
+    """procesar_zip distingue: rechazo por CONTENIDO (comprobación correcta) frente a error inesperado o de firma (fallo nuestro)."""
+
+    def test_un_feed_malo_es_rechazo_de_contenido_no_inesperado(self):
+        r = self.proc(self.zip("n.zip", version="20260101"))
+        self.assertEqual(r["estado"], "RECHAZADO")
+        self.assertFalse(r.get("inesperado"))
+
+    def test_un_error_inesperado_se_marca_como_tal(self):
+        def gen(*a, **k):
+            raise ValueError("fallo raro")
+        r = A.procesar_zip(self.zip("n.zip"), self.salida, self.antiguo, gen, HOY, self.dir_claves)
+        self.assertEqual(r["estado"], "RECHAZADO")
+        self.assertTrue(r.get("inesperado"), r)
+        self.assertIsNone(self.huella_publicable())
+
+    def test_la_falta_de_clave_es_un_error_nuestro_no_del_feed(self):
+        vacia = tempfile.mkdtemp(prefix="sin_clave_")
+        self.addCleanup(shutil.rmtree, vacia, True)
+        r = A.procesar_zip(self.zip("n.zip"), self.salida, self.antiguo, generador(), HOY, vacia)
+        self.assertEqual(r["estado"], "RECHAZADO")
+        self.assertTrue(r.get("inesperado"), r)
+
+
+class TestWorkflowDelRespaldo(unittest.TestCase):
+    """El workflow (que no se puede ejecutar aquí) se revisa por su texto: la API no admite acciones y Python recibe el evento real."""
+
+    def setUp(self):
+        ruta = os.path.join(TOOLS, "..", ".github", "workflows", "horarios.yml")
+        if not os.path.exists(ruta):
+            self.skipTest("no hay workflow")
+        with open(ruta, encoding="utf-8") as f:
+            self.txt = f.read()
+
+    def test_la_llamada_por_api_no_admite_accion_ni_version(self):
+        self.assertNotIn("inputs.accion", self.txt)
+        self.assertNotIn("inputs.version", self.txt)
+        self.assertNotIn("options: [ciclo", self.txt)
+
+    def test_python_recibe_el_evento_real_de_github(self):
+        self.assertIn('MARIOBUS_EVENTO="$EVENTO"', self.txt)
+        self.assertIn("github.event_name", self.txt)
+
+    def test_las_acciones_extraordinarias_solo_se_leen_en_un_push(self):
+        self.assertIn('[ "$EVENTO" = "push" ] && [ -f disparar/accion.txt ]', self.txt)
+        self.assertIn("ACCION=ciclo", self.txt)
 
 
 class TestCicloDiario(Base):
@@ -735,7 +911,7 @@ class TestCicloDiario(Base):
     META2 = {"modified": 1794000000000, "size": 76500000}
     DIA = 24 * 3600
 
-    def montar(self, rechazo_contenido=False, falla_descarga=False, falla_meta=False):
+    def montar(self, rechazo_contenido=False, falla_descarga=False, falla_meta=False, inesperado=False, corte=False):
         self.llamadas = {"meta": 0, "descarga": 0, "proceso": 0}
 
         def abrir_meta():
@@ -746,12 +922,16 @@ class TestCicloDiario(Base):
 
         def descargar():
             self.llamadas["descarga"] += 1
+            if corte:
+                raise Apagon()  # el trabajo se corta a mitad de la descarga (tiempo agotado, caída…)
             if falla_descarga:
                 raise A.Rechazo("Descarga interrumpida")
             return self.zip(f"d{self.llamadas['descarga']}.zip", version=f"2026{10 + self.llamadas['descarga']:02d}27")
 
         def procesar(z):
             self.llamadas["proceso"] += 1
+            if inesperado:
+                return {"estado": "RECHAZADO", "mensaje": "Error inesperado (ValueError): x", "inesperado": True}
             if rechazo_contenido:
                 return {"estado": "RECHAZADO", "mensaje": "datos incompletos"}
             return self.proc(z)
@@ -837,6 +1017,114 @@ class TestCicloDiario(Base):
         est = {"ultima_comprobacion": 0, "fuente_meta": self.META1}
         self.assertEqual(A.decidir(est, self.DIA, self.META1)[0], "OMITIR_SIN_CAMBIOS")
         self.assertEqual(A.decidir(est, self.DIA, self.META2)[0], "DESCARGAR")
+
+    # ---- recuperación tras errores: un fallo NO es una comprobación correcta y no obliga a esperar otras 20 h ----
+    H = 3600
+
+    def test_una_descarga_fallida_no_cuenta_como_comprobacion_correcta(self):
+        self.montar_actual = self.montar(falla_descarga=True)
+        r = self.vuelta(1000)
+        self.assertEqual(r["tipo"], "ERROR_DE_DESCARGA")
+        est = self.estado()
+        self.assertNotIn("ultima_comprobacion", est)  # no se anota como hecha
+        self.assertNotIn("fuente_meta", est)  # ni se da la fuente por procesada
+        self.assertEqual(est["fallos_seguidos"], 1)
+        self.assertEqual(est["ultimo_intento"], 1000)
+
+    def test_se_reintenta_tras_la_espera_corta_sin_esperar_20_horas(self):
+        self.montar_actual = self.montar(falla_descarga=True)
+        self.vuelta(1000)
+        self.montar_actual = self.montar()  # la red ya funciona
+        self.assertEqual(self.vuelta(1000 + 1 * self.H)["estado"], "OMITIDO")  # demasiado pronto (menos de 3 h)
+        self.assertEqual(self.llamadas, {"meta": 0, "descarga": 0, "proceso": 0})  # ni siquiera se mira la fuente
+        r = self.vuelta(1000 + 3 * self.H)  # 3 h después se reintenta, mucho antes de las 20 h
+        self.assertEqual(r["estado"], "COMPLETO", r)
+        est = self.estado()
+        self.assertEqual(est["fallos_seguidos"], 0)
+        self.assertEqual(est["ultima_comprobacion"], 1000 + 3 * self.H)
+        self.assertEqual(est["fuente_meta"], self.META1)
+
+    def test_tras_el_tope_de_fallos_seguidos_vuelve_la_espera_de_20_horas(self):
+        self.montar_actual = self.montar(falla_descarga=True)
+        for h in (0, 3, 6):  # tres intentos fallidos seguidos
+            self.assertEqual(self.vuelta(1000 + h * self.H)["tipo"], "ERROR_DE_DESCARGA")
+        self.assertEqual(self.llamadas["descarga"], 3)
+        for h in (9, 12, 20, 25):  # ya no se insiste: 20 h desde el último intento (a las 6 h)
+            self.assertEqual(self.vuelta(1000 + h * self.H)["estado"], "OMITIDO", h)
+        self.assertEqual(self.llamadas["descarga"], 3)
+        self.assertEqual(self.vuelta(1000 + 26 * self.H)["tipo"], "ERROR_DE_DESCARGA")  # a las 20 h exactas, un intento más
+        self.assertEqual(self.llamadas["descarga"], 4)
+
+    def test_un_error_inesperado_no_marca_la_fuente_ni_cuenta_como_comprobacion(self):
+        self.montar_actual = self.montar(inesperado=True)
+        r = self.vuelta(1000)
+        self.assertEqual(r["tipo"], "ERROR_INESPERADO")
+        est = self.estado()
+        self.assertNotIn("fuente_meta", est)
+        self.assertNotIn("ultima_comprobacion", est)
+        self.assertEqual(est["fallos_seguidos"], 1)
+        self.montar_actual = self.montar()  # el fallo ya está corregido
+        self.assertEqual(self.vuelta(1000 + 3 * self.H)["estado"], "COMPLETO")
+
+    def test_el_rechazo_por_contenido_es_una_comprobacion_correcta_y_no_se_reintenta(self):
+        self.montar_actual = self.montar(rechazo_contenido=True)
+        r = self.vuelta(1000)
+        self.assertEqual(r["tipo"], "VALIDACION_DEL_CONTENIDO")
+        est = self.estado()
+        self.assertEqual(est["ultima_comprobacion"], 1000)
+        self.assertEqual(est["fallos_seguidos"], 0)
+        self.assertEqual(est["fuente_meta"], self.META1)
+        self.assertEqual(self.vuelta(1000 + 3 * self.H)["estado"], "OMITIDO")  # dentro de las 20 h
+        self.assertEqual(self.llamadas["descarga"], 1)
+
+    def test_sin_novedades_es_una_comprobacion_correcta(self):
+        self.vuelta(1000)
+        r = self.vuelta(1000 + self.DIA)
+        self.assertEqual(r["tipo"], "SIN_NOVEDADES")
+        est = self.estado()
+        self.assertEqual(est["ultima_comprobacion"], 1000 + self.DIA)
+        self.assertEqual(est["fallos_seguidos"], 0)
+
+    def test_sin_red_en_el_resumen_no_cuenta_como_fallo_de_descarga(self):
+        self.montar_actual = self.montar(falla_meta=True)
+        r = self.vuelta(1000)
+        self.assertEqual(r["tipo"], "ERROR_DE_CONEXION")
+        ruta = os.path.join(self.salida, "estado.json")
+        self.assertFalse(os.path.exists(ruta) and "fallos_seguidos" in self.estado())
+        self.assertFalse(os.path.exists(ruta) and "ultima_comprobacion" in self.estado())
+
+    def test_si_el_trabajo_se_corta_a_mitad_el_intento_queda_contado(self):
+        self.montar_actual = self.montar(corte=True)
+        with self.assertRaises(Apagon):
+            self.vuelta(1000)
+        est = self.estado()
+        self.assertEqual(est["fallos_seguidos"], 1)
+        self.assertNotIn("ultima_comprobacion", est)
+        self.montar_actual = self.montar()
+        self.assertEqual(self.vuelta(1000 + 1 * self.H)["estado"], "OMITIDO")  # no se reintenta sin esperar
+        self.assertEqual(self.vuelta(1000 + 3 * self.H)["estado"], "COMPLETO")
+
+    def test_el_forzado_ignora_las_esperas_tras_fallo(self):
+        self.montar_actual = self.montar(falla_descarga=True)
+        self.vuelta(1000)
+        self.montar_actual = self.montar()
+        self.assertEqual(self.vuelta(1060, forzar=True)["estado"], "COMPLETO")
+
+    def test_la_regla_de_20_horas_entre_comprobaciones_correctas_no_cambia(self):
+        self.assertEqual(A.MIN_HORAS_ENTRE_COMPROBACIONES, 20)
+        self.vuelta(1000)
+        for h in (1, 3, 6, 12, 19):
+            self.assertEqual(self.vuelta(1000 + h * self.H)["estado"], "OMITIDO", h)
+        self.assertEqual(self.llamadas["meta"], 1)  # ni una petición más a la fuente
+        self.assertEqual(self.vuelta(1000 + 20 * self.H)["estado"], "SIN_CAMBIOS")
+
+    def test_decidir_con_fallos(self):
+        est = {"ultima_comprobacion": 0, "fallos_seguidos": 1, "ultimo_intento": 20 * self.H}
+        self.assertEqual(A.decidir(est, 21 * self.H)[0], "OMITIR_TRAS_FALLO")
+        self.assertEqual(A.decidir(est, 23 * self.H)[0], "DESCARGAR")
+        est["fallos_seguidos"] = A.MAX_INTENTOS_FALLIDOS
+        self.assertEqual(A.decidir(est, 39 * self.H)[0], "OMITIR_TRAS_FALLO")
+        self.assertEqual(A.decidir(est, 40 * self.H)[0], "DESCARGAR")
 
     def test_el_manifiesto_es_pequeno(self):
         self.proc(self.zip("n.zip"))

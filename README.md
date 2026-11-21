@@ -29,11 +29,17 @@ Consorcio Regional de Transportes de Madrid (CRTM). Funciona sin el ordenador de
 | `prueba_controlada/` | Los 4 JSON reales que ya lleva la app, solo para la acción «prueba_controlada» |
 | `tools/regresiones_explicadas.json` | Líneas que el Consorcio suprima a propósito (con su motivo) para que no bloqueen |
 
-## Acciones manuales (Actions → «Horarios Mario-Bus» → Run workflow)
-- **ciclo**: lo de cada día.  **ciclo_forzado**: ignora el «una vez al día» y el «sin cambios» (vuelve a descargar y validar).
-- **prueba_controlada**: publica, **marcada como prueba y firmada**, una actualización con los mismos datos reales que ya lleva la app, para
-  demostrar el recorrido servidor → móvil. No es un feed nuevo del Consorcio. Solo la acepta la variante de prueba de la app.
-- **restaurar** + versión: vuelve a publicar una versión de `estado/historial/` (se refirma con secuencia nueva).
+## Quién puede pedir qué
+- **Cron de GitHub y llamadas por API (incluido el respaldo externo de cron-job.org, `origen=respaldo-externo`)**: SOLO el **ciclo normal**
+  (mirar la fuente, descargar si cambió y publicar solo si es completo). La pantalla «Run workflow» ya no ofrece acciones ni versión, y Python
+  lo vuelve a comprobar con el evento real que pone GitHub (variable `MARIOBUS_EVENTO`): quien llama a la API no puede falsearlo.
+- **Acciones extraordinarias** — solo con un `git push` de `disparar/accion.txt` (línea 1; línea 2 = versión para restaurar), que exige poder
+  escribir en el repositorio:
+  - **ciclo_forzado**: ignora el «una vez al día» y el «sin cambios» (vuelve a descargar y validar).
+  - **prueba_controlada**: publica, **marcada como prueba y firmada**, una actualización con los mismos datos reales que ya lleva la app. No es
+    un feed nuevo del Consorcio y solo la acepta la variante de prueba de la app. **Nunca sustituye a una publicación oficial** (el código se
+    niega); solo puede ir sobre otra prueba o sobre nada.
+  - **restaurar** + versión: vuelve a publicar una versión de `estado/historial/` (se refirma con secuencia nueva).
 
 ## Seguridad
 - La clave privada de firma **solo** está en *Settings → Secrets and variables → Actions → `HORARIOS_FIRMA_PRIVADA`*. El workflow la escribe en
@@ -49,6 +55,9 @@ Consorcio Regional de Transportes de Madrid (CRTM). Funciona sin el ordenador de
 - Respaldo externo independiente de GitHub (opcional, gratuito): ver `docs/RESPALDO_EXTERNO.md`.
 - Ejecución desde git, sin botones: editar `disparar/accion.txt` (línea 1: ciclo, ciclo_forzado, prueba_controlada o restaurar; línea 2: versión
   para restaurar) y subirlo.
+- **Tras un fallo** (descarga cortada, error inesperado o de firma) NO se espera otras 20 h: no cuenta como comprobación correcta y se reintenta
+  a las 3 h, hasta 3 intentos fallidos seguidos; después se vuelve a la espera normal de 20 h. Solo una comprobación CORRECTA (sin novedades,
+  publicada o rechazada por su contenido) activa la regla de «una comprobación cada 20 h», que no ha cambiado.
 
 ## Mantenimiento
 - Mirar de vez en cuando la pestaña **Actions**: cada día debe haber una ejecución. «SIN_CAMBIOS» o «OMITIDO» es lo normal.
