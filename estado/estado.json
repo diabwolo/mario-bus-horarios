@@ -1,9 +1,10 @@
 {
   "publicable_es_prueba": true,
-  "ultima_prueba_controlada": "2026-11-19T19:44:18+00:00",
+  "ultima_prueba_controlada": "2026-11-21T11:15:07+00:00",
   "ultima_comprobacion": 1795248865.478803,
   "fuente_meta": {
     "modified": 1793891639000,
     "size": 76437176
-  }
+  },
+  "tipo_publicable": "PRUEBA_CONTROLADA"
 }

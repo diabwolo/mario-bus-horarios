@@ -1,7 +1,7 @@
 {
   "esquema": 2,
-  "secuencia": 1795117458,
-  "generado": "2026-11-19T19:44:18+00:00",
+  "secuencia": 1795259707,
+  "generado": "2026-11-21T11:15:07+00:00",
   "version_gtfs": "20261027",
   "estado": "PRUEBA_CONTROLADA",
   "parcial": false,
@@ -20,18 +20,18 @@
     },
     {
       "nombre": "moncloa_islas.json",
-      "bytes": 932970,
-      "sha256": "9002b59b8c43d40d4c5f6d0a2f02b4c45a48dedcf6b11891ac1b7bb1eef27d28"
+      "bytes": 932988,
+      "sha256": "7f9ecbff5aa52b250b37fc53ec829ac70666d041753cc0d515504365807e600c"
     },
     {
       "nombre": "paradas.json",
-      "bytes": 462311,
-      "sha256": "0c5a6ec3bd5a13031519e8e4b2abe3ea9720b446aa3babea48b814994af0b823"
+      "bytes": 462329,
+      "sha256": "dba5037fc706d02ab769dedecd74e23bf4a102ee1bb20c832516a4ed7e624664"
     },
     {
       "nombre": "salidas.json",
-      "bytes": 357266,
-      "sha256": "640bf34e03321d9e76412a82360015a897ee856f70923cfc1f4953be9cff84be"
+      "bytes": 357284,
+      "sha256": "bf0140592178ddedd1045cd9d485f7fac70afb38cc3f2d0153227db05a6b5a59"
     }
   ]
 }

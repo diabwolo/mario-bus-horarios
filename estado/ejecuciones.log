@@ -6,3 +6,4 @@
 2026-11-21T02:35:44Z | ejecución #8 | evento=schedule | origen=- | cron='29 21 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO · ya se comprobó hace menos de 20 h
 2026-11-21T08:14:25Z | ejecución #9 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: SIN_CAMBIOS · la fuente oficial no ha cambiado (misma fecha y tamaño): no se descarga ni se convierte nada
 2026-11-21T11:08:35Z | ejecución #10 | evento=push | origen=- | cron='' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
+2026-11-21T11:15:07Z | ejecución #11 | evento=push | origen=- | cron='' | acción=prueba_controlada | paso=success | Publicada la PRUEBA CONTROLADA (secuencia 1795259707 ) en publicable/. Marcada como prueba; no es un feed del Consorcio.
