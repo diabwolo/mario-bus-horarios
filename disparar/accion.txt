@@ -1,1 +1,1 @@
-ciclo_forzado
+ciclo
