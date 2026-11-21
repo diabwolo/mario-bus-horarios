@@ -41,6 +41,20 @@ Consorcio Regional de Transportes de Madrid (CRTM). Funciona sin el ordenador de
     niega); solo puede ir sobre otra prueba o sobre nada.
   - **restaurar** + versión: vuelve a publicar una versión de `estado/historial/` (se refirma con secuencia nueva).
 
+## Protecciones de la ejecución (`tools/guardias_ejecucion.py`)
+- **Vigencia (primer paso, antes de usar la clave):** una ejecución solo trabaja si sigue siendo válida respecto a `main`. Una **reejecución**
+  (intento > 1) se aborta siempre: usaría el commit, el código y el estado de cuando se creó. Si `main` avanzó solo por commits de estado o de
+  código (los de una ejecución anterior en cola), la ejecución se **pone al día y sigue**; se aborta si cambió el workflow, si cambió
+  `disparar/` (en un push) o si el commit ya no es antepasado de `main`. Un aborto no usa el secreto, no descarga, no escribe ni publica
+  nada: el trabajo queda en rojo y GitHub avisa. Nota: esto protege las ejecuciones creadas desde que existe este paso; las anteriores
+  llevan grabado su workflow antiguo y solo se pueden eliminar desde la pestaña Actions.
+- **Registro limpio:** cada línea de `estado/ejecuciones.log` se construye en Python con todos los campos limpios (sin saltos de línea,
+  controles ni caracteres invisibles, sin «|», recortados): el texto de «origen» no puede falsificar entradas.
+- **Instrucción desarmada:** tras una acción extraordinaria por `push` (forzar, prueba, restaurar), `disparar/accion.txt` vuelve solo a
+  `ciclo` en el mismo commit de estado, también si la acción falló (queda anotado en el registro; repetirla a mano si procede).
+- **Restaurar** nunca deja que una PRUEBA sustituya a una publicación OFICIAL.
+- Al guardar el estado, si `main` se movió, se reintenta una vez sobre la versión actual (nunca se despliega nada si el guardado falla).
+
 ## Seguridad
 - La clave privada de firma **solo** está en *Settings → Secrets and variables → Actions → `HORARIOS_FIRMA_PRIVADA`*. El workflow la escribe en
   el disco de la máquina efímera, la usa y la borra. No aparece en el código ni en archivos públicos. La app solo lleva la clave pública.

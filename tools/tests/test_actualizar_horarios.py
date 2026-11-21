@@ -5,6 +5,7 @@ La última clase usa los feeds REALES de tools/gtfs (se omite si faltan)."""
 import datetime
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ TOOLS = os.path.dirname(AQUI)
 sys.path.insert(0, TOOLS)
 import actualizar_horarios as A  # noqa: E402
 import firma_manifiesto as F  # noqa: E402
+import guardias_ejecucion as G  # noqa: E402
 import validar_gtfs as V  # noqa: E402
 
 HOY = datetime.date(2026, 11, 18)
@@ -902,6 +904,389 @@ class TestWorkflowDelRespaldo(unittest.TestCase):
     def test_las_acciones_extraordinarias_solo_se_leen_en_un_push(self):
         self.assertIn('[ "$EVENTO" = "push" ] && [ -f disparar/accion.txt ]', self.txt)
         self.assertIn("ACCION=ciclo", self.txt)
+
+
+def git(cwd, *args):
+    r = subprocess.run(["git", "-c", "user.name=prueba", "-c", "user.email=p@p.p", "-c", "commit.gpgsign=false", "-C", cwd, *args],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert r.returncode == 0, (args, r.stderr)
+    return r.stdout.strip()
+
+
+class TestVigenciaDeLaEjecucion(unittest.TestCase):
+    """P1 · Una ejecución solo puede publicar, restaurar o modificar el estado si sigue siendo VÁLIDA respecto a main
+    (repositorios git reales en una carpeta temporal)."""
+
+    def escribir(self, repo, ruta, texto):
+        p = os.path.join(repo, *ruta.split("/"))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write(texto)
+
+    def clonar(self, nombre, extra=()):
+        d = os.path.join(self.t, nombre)
+        git(self.t, "clone", "-q", *extra, self.url, d)
+        git(d, "symbolic-ref", "HEAD", "refs/heads/main")
+        return d
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="vig_")
+        self.addCleanup(shutil.rmtree, self.t, True)
+        self.origen = os.path.join(self.t, "origin.git")
+        os.makedirs(self.origen)
+        git(self.origen, "init", "-q", "--bare")
+        git(self.origen, "symbolic-ref", "HEAD", "refs/heads/main")
+        self.url = pathlib.Path(self.origen).as_uri()
+        self.a = self.clonar("a")  # el «servidor» de esta ejecución
+        for ruta, txt in {"estado/x.txt": "1\n", "tools/a.py": "1\n", ".github/workflows/h.yml": "1\n", "disparar/accion.txt": "ciclo\n"}.items():
+            self.escribir(self.a, ruta, txt)
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-q", "-m", "base")
+        git(self.a, "push", "-q", "origin", "main")
+        self.otro = self.clonar("otro")  # quien sube commits mientras tanto
+
+    def empujar(self, repo, archivos, mensaje="cambio"):
+        git(repo, "pull", "-q", "--ff-only", "origin", "main")
+        for ruta, txt in archivos.items():
+            self.escribir(repo, ruta, txt)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", mensaje)
+        git(repo, "push", "-q", "origin", "main")
+
+    def vigencia(self, repo=None, evento="schedule", ref="refs/heads/main", intento="1"):
+        return G.evaluar_vigencia(repo or self.a, evento, ref, intento)
+
+    def foto(self, repo):
+        return git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain")
+
+    def test_una_ejecucion_actual_puede_completar_su_ciclo_normal(self):
+        v, motivo = self.vigencia()
+        self.assertEqual(v, "CONTINUAR", motivo)
+        self.assertEqual(G.main(["vigencia", f"--repo={self.a}", "--evento=schedule", "--ref=refs/heads/main", "--intento=1"]), 0)
+
+    def test_una_reejecucion_siempre_aborta_aunque_su_commit_sea_el_ultimo(self):
+        for n in ("2", "3"):
+            v, motivo = self.vigencia(intento=n)
+            self.assertEqual(v, "ABORTAR")
+            self.assertIn("REEJECUCIÓN", motivo)
+        self.assertEqual(G.main(["vigencia", f"--repo={self.a}", "--evento=push", "--ref=refs/heads/main", "--intento=2"]), 1)
+
+    def test_una_ejecucion_antigua_no_puede_publicar_aborta_sin_tocar_nada(self):
+        antes = self.foto(self.a)
+        self.empujar(self.otro, {".github/workflows/h.yml": "2\n"})  # el workflow cambió: esta ejecución es obsoleta
+        v, motivo = self.vigencia()
+        self.assertEqual(v, "ABORTAR", motivo)
+        self.assertEqual(self.foto(self.a), antes)  # ni avanzó ni modificó nada
+        self.assertEqual(G.main(["vigencia", f"--repo={self.a}", "--evento=schedule", "--ref=refs/heads/main", "--intento=1"]), 1)
+
+    def test_un_commit_que_ya_no_es_antepasado_de_main_aborta(self):
+        self.empujar(self.otro, {"estado/otro.txt": "o\n"})
+        self.escribir(self.a, "estado/propio.txt", "p\n")
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-q", "-m", "commit propio que main no tiene")
+        antes = self.foto(self.a)
+        v, motivo = self.vigencia()
+        self.assertEqual(v, "ABORTAR", motivo)
+        self.assertEqual(self.foto(self.a), antes)
+
+    def test_un_commit_de_estado_concurrente_no_aborta_y_se_pone_al_dia(self):
+        self.empujar(self.otro, {"estado/ejecuciones.log": "linea\n"}, "estado de otra ejecución")
+        v, motivo = self.vigencia()
+        self.assertEqual(v, "CONTINUAR_ACTUALIZADO", motivo)
+        self.assertEqual(git(self.a, "rev-parse", "HEAD"), git(self.a, "rev-parse", "origin/main"))
+        self.assertTrue(os.path.exists(os.path.join(self.a, "estado", "ejecuciones.log")))
+
+    def test_un_commit_de_codigo_concurrente_pone_al_dia_con_el_codigo_nuevo(self):
+        self.empujar(self.otro, {"tools/a.py": "2\n"})
+        v, motivo = self.vigencia()
+        self.assertEqual(v, "CONTINUAR_ACTUALIZADO", motivo)
+        with open(os.path.join(self.a, "tools", "a.py"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "2\n")
+
+    def test_una_instruccion_posterior_de_disparar_aborta_solo_en_un_push(self):
+        # el commit de estado de una ejecución que desarmó accion.txt NO debe abortar a las que esperaban en cola (cron/API)
+        self.empujar(self.otro, {"disparar/accion.txt": "restaurar\n20261027\n"})
+        inicio = self.foto(self.a)
+        v, motivo = self.vigencia(evento="push")
+        self.assertEqual(v, "ABORTAR", motivo)
+        self.assertEqual(self.foto(self.a), inicio)
+        v, motivo = self.vigencia(evento="schedule")
+        self.assertEqual(v, "CONTINUAR_ACTUALIZADO", motivo)
+
+    def test_otra_referencia_aborta(self):
+        for ref in ("refs/heads/otra", "refs/tags/v1", ""):
+            self.assertEqual(self.vigencia(ref=ref)[0], "ABORTAR", ref)
+
+    def test_si_no_se_puede_consultar_main_aborta_sin_tocar_nada(self):
+        antes = self.foto(self.a)
+        os.rename(self.origen, self.origen + ".fuera")  # GitHub no responde
+        v, motivo = self.vigencia()
+        self.assertEqual(v, "ABORTAR", motivo)
+        self.assertEqual(self.foto(self.a), antes)
+
+    def test_carrera_entre_trabajos_en_cola_no_pierde_ni_pisa_nada(self):
+        b = self.clonar("b")  # trabajo en cola, creado cuando main era el mismo commit que ve a
+        self.escribir(self.a, "estado/ejecuciones.log", "A\n")  # el trabajo A termina y guarda su estado
+        git(self.a, "add", "-A")
+        git(self.a, "commit", "-q", "-m", "estado A")
+        git(self.a, "push", "-q", "origin", "main")
+        v, motivo = G.evaluar_vigencia(b, "schedule", "refs/heads/main", "1")
+        self.assertEqual(v, "CONTINUAR_ACTUALIZADO", motivo)  # B no aborta: se pone al día con el estado de A
+        self.escribir(b, "estado/ejecuciones.log", "A\nB\n")
+        git(b, "add", "-A")
+        git(b, "commit", "-q", "-m", "estado B")
+        git(b, "push", "-q", "origin", "main")  # avance rápido: sin choque
+        c = self.clonar("c")
+        with open(os.path.join(c, "estado", "ejecuciones.log"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "A\nB\n")
+
+    def test_funciona_con_un_checkout_superficial(self):
+        s = self.clonar("s", extra=("--depth", "1"))
+        self.empujar(self.otro, {"estado/z.txt": "z\n"})
+        v, motivo = G.evaluar_vigencia(s, "schedule", "refs/heads/main", "1")
+        self.assertEqual(v, "CONTINUAR_ACTUALIZADO", motivo)
+
+
+class TestWorkflowDeLasGuardias(unittest.TestCase):
+    """El workflow (que no se puede ejecutar aquí) se revisa por su texto: orden de los pasos y que nada publique si la vigencia aborta."""
+
+    def setUp(self):
+        ruta = os.path.join(TOOLS, "..", ".github", "workflows", "horarios.yml")
+        if not os.path.exists(ruta):
+            self.skipTest("no hay workflow")
+        with open(ruta, encoding="utf-8") as f:
+            self.txt = f.read()
+
+    def test_la_vigencia_va_antes_que_la_clave_y_que_todo_trabajo_y_nada_la_esquiva(self):
+        i_v = self.txt.index("guardias_ejecucion.py vigencia")
+        i_c = self.txt.index("secrets.HORARIOS_FIRMA_PRIVADA")  # el uso real del secreto (el nombre también sale en un comentario)
+        i_t = self.txt.index("id: trabajo")
+        i_p = self.txt.index("deploy-pages")
+        self.assertTrue(i_v < i_c < i_t < i_p)
+        self.assertNotIn("always()", self.txt[i_v:i_c])  # si la vigencia aborta, todo lo siguiente se salta
+        self.assertNotIn("continue-on-error", self.txt[:i_t])  # la vigencia no se puede ignorar
+        for paso in ("Pruebas del servidor", "Clave de firma"):  # pasos que usan el secreto o publican: sin «always()» antes de «trabajo»
+            self.assertTrue(self.txt.index(paso) > i_v)
+
+    def test_el_checkout_trae_la_historia_completa(self):
+        self.assertIn("fetch-depth: 0", self.txt)
+
+    def test_el_registro_solo_se_escribe_a_traves_de_la_limpieza(self):
+        self.assertIn("guardias_ejecucion.py registro", self.txt)
+        self.assertNotIn("origen=${ORIGEN", self.txt)
+        for linea in self.txt.splitlines():
+            if ">> estado/ejecuciones.log" in linea:
+                self.assertNotIn("echo", linea)
+
+    def test_la_instruccion_se_desarma_y_se_confirma_en_el_mismo_commit_de_estado(self):
+        self.assertIn("guardias_ejecucion.py desarmar", self.txt)
+        self.assertIn("git add -A estado disparar/accion.txt", self.txt)
+
+    def test_la_confirmacion_reintenta_una_vez_si_main_se_movio(self):
+        self.assertIn("git pull --rebase", self.txt)
+
+    def test_registro_y_desarmado_no_actuan_si_la_vigencia_aborto(self):
+        self.assertGreaterEqual(self.txt.count("steps.trabajo.outcome != 'skipped'"), 2)
+
+
+class TestRegistroLimpio(unittest.TestCase):
+    """P2 · El campo «origen» (y todos los demás) no puede falsificar líneas del registro estado/ejecuciones.log."""
+
+    FORJADA = ("x\n2026-11-21T00:00:00Z | ejecución #999 | evento=push | origen=- | cron='' | acción=restaurar | paso=success | "
+               "Restaurada la versión 1\r\n\u2028otra\u0085línea\x00\x1b[31m\u200b\u202e")
+
+    def test_un_origen_con_saltos_de_linea_no_puede_falsificar_el_registro(self):
+        linea = G.linea_registro("12", "workflow_dispatch", self.FORJADA, "", "ciclo", "success", "RESULTADO: OMITIDO")
+        for c in ("\n", "\r", "\u2028", "\u2029", "\u0085", "\x00", "\x1b", "\u200b", "\u202e"):
+            self.assertNotIn(c, linea)
+        self.assertEqual(len(linea.splitlines()), 1)
+        self.assertEqual(linea.count(" | "), 7)  # los 8 campos de siempre, sin campos inventados
+        origen = linea.split(" | ")[3]
+        self.assertTrue(origen.startswith("origen="))
+        self.assertLessEqual(len(origen), len("origen=") + 40)
+
+    def test_lo_legitimo_se_conserva(self):
+        for legit in ("respaldo-externo", "manual", "desarmado"):
+            self.assertEqual(G.limpiar_texto(legit), legit)
+        for vacio in (None, "", "\n\n", "\u200b"):
+            self.assertEqual(G.limpiar_texto(vacio), "-")
+        linea = G.linea_registro("12", "schedule", "", "17 4 * * *", "ciclo", "success", "RESULTADO: OMITIDO · ya se comprobó hace menos de 20 h")
+        self.assertRegex(linea, r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ \| ejecución #12 \| evento=schedule \| origen=- \| cron='17 4 \* \* \*' "
+                                r"\| acción=ciclo \| paso=success \| RESULTADO: OMITIDO · ya se comprobó hace menos de 20 h$")
+
+    def test_tambien_se_limpian_el_resultado_y_el_resto_de_campos(self):
+        linea = G.linea_registro("1\n2", "push\r\nx", "-", "a\nb", "ciclo\n", "success\n", "OK\nFALSA | línea")
+        self.assertEqual(len(linea.splitlines()), 1)
+        self.assertEqual(linea.count(" | "), 7)
+
+    def test_por_la_linea_de_ordenes_sale_una_sola_linea_y_el_registro_no_gana_lineas_inventadas(self):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            codigo = G.main(["registro", "--run=5", "--evento=workflow_dispatch", "--origen=" + self.FORJADA, "--cron=", "--accion=ciclo",
+                             "--paso=success", "--resultado=OK\nFALSA"])
+        self.assertEqual(codigo, 0)
+        nueva = out.getvalue()
+        registro = "linea 1\nlinea 2\n" + nueva  # lo que haría «>> estado/ejecuciones.log»
+        self.assertEqual(len(registro.splitlines()), 3)
+
+
+class TestRestauracionProtegida(Base):
+    """P3 · Una restauración nunca deja que una PRUEBA_CONTROLADA sustituya una publicación OFICIAL; las legítimas conservan la secuencia."""
+
+    def prueba(self):
+        d = os.path.join(self.t, "datos")
+        os.makedirs(d, exist_ok=True)
+        for n in A.DATASETS:
+            with open(os.path.join(d, n), "w", encoding="utf-8") as f:
+                json.dump({"version": "20261027", "marca": n, "deps": [1], "islas": {"1": {}}}, f)
+        return A.publicar_prueba_controlada(self.salida, self.dir_claves, d, "p")
+
+    def test_una_prueba_no_puede_sustituir_a_una_oficial_por_restauracion(self):
+        self.prueba()  # la prueba (20261027) pasará al historial
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261201"))["estado"], "COMPLETO")  # ahora hay una OFICIAL
+        self.assertTrue(os.path.isdir(os.path.join(self.salida, "historial", "20261027")))
+        antes, est = self.huella_publicable(), self.estado()
+        hist = sorted(os.listdir(os.path.join(self.salida, "historial")))
+        with self.assertRaises(A.Rechazo) as cm:
+            A.restaurar_version("20261027", self.salida, self.dir_claves)
+        self.assertIn("OFICIAL", str(cm.exception))
+        self.assertEqual(self.huella_publicable(), antes)
+        self.assertEqual(self.estado(), est)
+        self.assertEqual(sorted(os.listdir(os.path.join(self.salida, "historial"))), hist)
+        codigo, texto = ejecutar_main(self.salida, self.dir_claves, ["--restaurar", "20261027"], "push", "push")  # ni siquiera desde un push
+        self.assertEqual(codigo, 1, texto)
+        self.assertIn("OFICIAL", texto)
+        self.assertEqual(self.huella_publicable(), antes)
+
+    def test_las_restauraciones_legitimas_conservan_la_secuencia_creciente(self):
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261027"))["estado"], "COMPLETO")
+        self.assertEqual(self.proc(self.zip("b.zip", version="20261201"))["estado"], "COMPLETO")
+        s0 = self.manifest("publicable")["secuencia"]
+        m1 = A.restaurar_version("20261027", self.salida, self.dir_claves)  # oficial sobre oficial
+        m2 = A.restaurar_version("20261201", self.salida, self.dir_claves)
+        self.assertTrue(s0 < m1["secuencia"] < m2["secuencia"], (s0, m1["secuencia"], m2["secuencia"]))
+        A.verificar_paquete(os.path.join(self.salida, "publicable"), self.publica)
+
+    def test_una_prueba_si_puede_restaurar_sobre_otra_prueba(self):
+        self.prueba()
+        self.prueba()  # la primera queda en el historial
+        s0 = self.manifest("publicable")["secuencia"]
+        m = A.restaurar_version("20261027", self.salida, self.dir_claves)
+        self.assertEqual(m["estado"], "PRUEBA_CONTROLADA")
+        self.assertGreater(m["secuencia"], s0)
+
+    def test_sobre_una_publicacion_ilegible_no_se_restaura_una_prueba(self):
+        self.prueba()
+        self.prueba()
+        with open(os.path.join(self.salida, "publicable", "manifest.json"), "w") as f:
+            f.write("basura")
+        antes = self.huella_publicable()
+        with self.assertRaises(A.Rechazo):
+            A.restaurar_version("20261027", self.salida, self.dir_claves)
+        self.assertEqual(self.huella_publicable(), antes)
+
+
+class TestDesarmadoDeLaInstruccion(unittest.TestCase):
+    """P3 · Tras una acción extraordinaria, disparar/accion.txt vuelve a «ciclo» de forma atómica; si falla queda desarmada y anotada."""
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="des_")
+        self.addCleanup(shutil.rmtree, self.t, True)
+        os.makedirs(os.path.join(self.t, "disparar"))
+        self.ruta = os.path.join(self.t, "disparar", "accion.txt")
+
+    def poner(self, texto):
+        with open(self.ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(texto)
+
+    def leer(self):
+        with open(self.ruta, encoding="utf-8", newline="") as f:
+            return f.read()
+
+    def test_tras_una_accion_correcta_el_disparador_vuelve_a_ciclo(self):
+        for accion, extra in (("restaurar", "20261027\n"), ("prueba_controlada", ""), ("ciclo_forzado", "")):
+            self.poner(f"{accion}\n{extra}")
+            cambiado, nota = G.desarmar_accion(self.ruta, accion, "push", "success")
+            self.assertTrue(cambiado)
+            self.assertEqual(self.leer(), "ciclo\n")
+            self.assertIn("CORRECTAMENTE", nota)
+
+    def test_si_la_accion_falla_tambien_queda_desarmada_y_registrada(self):
+        self.poner("restaurar\n20261027\n")
+        cambiado, nota = G.desarmar_accion(self.ruta, "restaurar", "push", "failure")
+        self.assertTrue(cambiado)
+        self.assertEqual(self.leer(), "ciclo\n")
+        self.assertIn("FALLIDA", nota)
+        self.assertIn("nada se publicó", nota)
+
+    def test_un_cron_o_la_api_nunca_tocan_el_disparador(self):
+        self.poner("prueba_controlada\n")
+        for ev in ("schedule", "workflow_dispatch"):
+            cambiado, nota = G.desarmar_accion(self.ruta, "prueba_controlada", ev, "success")
+            self.assertEqual((cambiado, nota), (False, ""))
+            self.assertEqual(self.leer(), "prueba_controlada\n")
+
+    def test_el_ciclo_normal_no_reescribe_nada(self):
+        self.poner("ciclo\n")
+        self.assertEqual(G.desarmar_accion(self.ruta, "ciclo", "push", "success"), (False, ""))
+
+    def test_la_escritura_es_atomica_y_no_deja_restos(self):
+        self.poner("restaurar\n20261027\n")
+        G.desarmar_accion(self.ruta, "restaurar", "push", "success")
+        self.assertEqual(os.listdir(os.path.dirname(self.ruta)), ["accion.txt"])
+
+    def test_por_la_linea_de_ordenes(self):
+        import contextlib
+        import io
+        self.poner("restaurar\n20261027\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            codigo = G.main(["desarmar", f"--ruta={self.ruta}", "--accion=restaurar", "--evento=push", "--paso=success"])
+        self.assertEqual(codigo, 0)
+        self.assertIn("CORRECTAMENTE", out.getvalue())
+        self.assertEqual(self.leer(), "ciclo\n")
+
+
+class TestSegundaCapaYAnterioresIntactos(Base):
+    """Segunda capa en Python contra reejecuciones, y confirmación de que R2, R3, R4 y la regla de 20 h siguen como estaban."""
+
+    def test_main_rechaza_una_reejecucion_aunque_el_workflow_no_la_hubiera_frenado(self):
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261201"))["estado"], "COMPLETO")
+        antes, est = self.huella_publicable(), self.estado()
+        os.environ["GITHUB_RUN_ATTEMPT"] = "2"
+        try:
+            codigo, texto = ejecutar_main(self.salida, self.dir_claves, [], "schedule", None)
+        finally:
+            os.environ.pop("GITHUB_RUN_ATTEMPT", None)
+        self.assertEqual(codigo, 1, texto)
+        self.assertIn("reejecución", texto)
+        self.assertEqual(self.huella_publicable(), antes)
+        self.assertEqual(self.estado(), est)
+
+    def test_la_regla_de_20_horas_y_los_reintentos_siguen_como_estaban(self):
+        self.assertEqual(A.MIN_HORAS_ENTRE_COMPROBACIONES, 20)
+        self.assertEqual(A.MIN_HORAS_REINTENTO_TRAS_FALLO, 3)
+        self.assertEqual(A.MAX_INTENTOS_FALLIDOS, 3)
+        self.assertEqual(A.decidir({"ultima_comprobacion": 0}, 19 * 3600)[0], "OMITIR_RECIENTE")
+        self.assertEqual(A.decidir({"ultima_comprobacion": 0}, 20 * 3600)[0], "DESCARGAR")
+
+    def test_r4_el_respaldo_externo_sigue_sin_poder_nada_extraordinario(self):
+        for flag in ("--forzar", "--prueba-controlada", "--restaurar", "--aprobar-parcial", "--crear-base"):
+            self.assertIsNotNone(A.acciones_no_permitidas([flag, "x"], "workflow_dispatch", "respaldo-externo"), flag)
+
+    def test_r4_una_prueba_sigue_sin_poder_sustituir_una_oficial(self):
+        self.assertEqual(self.proc(self.zip("a.zip", version="20261201"))["estado"], "COMPLETO")
+        d = os.path.join(self.t, "datos")
+        os.makedirs(d)
+        for n in A.DATASETS:
+            with open(os.path.join(d, n), "w", encoding="utf-8") as f:
+                json.dump({"version": "20261027", "deps": [1], "islas": {"1": {}}}, f)
+        antes = self.huella_publicable()
+        with self.assertRaises(A.Rechazo):
+            A.publicar_prueba_controlada(self.salida, self.dir_claves, d, "x")
+        self.assertEqual(self.huella_publicable(), antes)
 
 
 class TestCicloDiario(Base):

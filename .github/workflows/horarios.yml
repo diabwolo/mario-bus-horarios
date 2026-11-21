@@ -53,10 +53,23 @@ jobs:
       url: ${{ steps.pages.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0               # historia completa: hace falta para comprobar que este commit sigue siendo antepasado de main
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # P1 · VIGENCIA. Va ANTES de la clave, de las pruebas y de todo lo demás: si esta ejecución es una reejecución (usaría el commit, el
+      # código y el estado de cuando se creó) o su commit ya no es válido respecto a main, el trabajo se PARA AQUÍ: no se usa el secreto,
+      # no se descarga, no se escribe ni se publica nada (todos los pasos siguientes se saltan). Si main solo avanzó por commits de
+      # estado del propio servidor (los de una ejecución anterior en cola), la ejecución se pone al día y sigue.
+      - name: Vigencia de la ejecución (respecto a main)
+        env:
+          EVENTO: ${{ github.event_name }}
+          REFERENCIA: ${{ github.ref }}
+          INTENTO: ${{ github.run_attempt }}
+        run: python tools/guardias_ejecucion.py vigencia --repo=. --evento="$EVENTO" --ref="$REFERENCIA" --intento="$INTENTO"
 
       - run: pip install -r requirements.txt
 
@@ -104,8 +117,10 @@ jobs:
           esac
 
       # Registro público de cuándo se ejecutó y por qué (schedule = automático; workflow_dispatch = a mano)
+      # P2 · La línea se construye en Python con TODOS los campos limpios (sin saltos de línea ni caracteres de control o de formato, sin
+      # «|», recortados): quien llame a la API no puede falsificar entradas del registro con el texto de «origen».
       - name: Registrar la ejecución
-        if: always()
+        if: always() && steps.trabajo.outcome != 'skipped'
         env:
           EVENTO: ${{ github.event_name }}
           RESULTADO_PASO: ${{ steps.trabajo.outcome }}
@@ -115,13 +130,32 @@ jobs:
         run: |
           ACCION=$(cat accion_elegida.txt 2>/dev/null || echo ciclo)
           RES=$(grep -m1 -E "RESULTADO|OMITIDO|SIN_CAMBIOS|SIN_RED|PRUEBA|Restaurada|Publicada" salida_trabajo.txt 2>/dev/null | cut -c1-220 || true)
-          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ejecución #$RUN | evento=$EVENTO | origen=${ORIGEN:--} | cron='$PROGRAMADO' | acción=$ACCION | paso=$RESULTADO_PASO | ${RES:-sin resultado}" >> estado/ejecuciones.log
+          python tools/guardias_ejecucion.py registro --run="$RUN" --evento="$EVENTO" --origen="$ORIGEN" --cron="$PROGRAMADO" \
+            --accion="$ACCION" --paso="$RESULTADO_PASO" --resultado="${RES:-sin resultado}" >> estado/ejecuciones.log
           tail -n 300 estado/ejecuciones.log > estado/ejecuciones.tmp && mv estado/ejecuciones.tmp estado/ejecuciones.log
-          rm -f salida_trabajo.txt accion_elegida.txt
+          rm -f salida_trabajo.txt
 
       - name: Borrar la clave del disco
         if: always()
         run: rm -rf claves
+
+      # P3 · DESARMADO. Tras una acción extraordinaria lanzada por un push (forzar, prueba, restaurar), disparar/accion.txt vuelve a `ciclo`
+      # en el mismo commit de estado (con el GITHUB_TOKEN, que no dispara otra ejecución). Se desarma también si la acción FALLÓ (no se
+      # publicó nada): una instrucción fallida que siguiera armada se repetiría sola en cualquier push posterior. Queda anotado en el registro.
+      - name: Desarmar la instrucción extraordinaria
+        if: always() && steps.trabajo.outcome != 'skipped'
+        env:
+          EVENTO: ${{ github.event_name }}
+          RESULTADO_PASO: ${{ steps.trabajo.outcome }}
+          RUN: ${{ github.run_number }}
+        run: |
+          ACCION=$(cat accion_elegida.txt 2>/dev/null || echo ciclo)
+          NOTA=$(python tools/guardias_ejecucion.py desarmar --ruta=disparar/accion.txt --accion="$ACCION" --evento="$EVENTO" --paso="$RESULTADO_PASO")
+          if [ -n "$NOTA" ]; then
+            python tools/guardias_ejecucion.py registro --run="$RUN" --evento="$EVENTO" --origen="desarmado" --cron="" \
+              --accion="$ACCION" --paso="$RESULTADO_PASO" --resultado="$NOTA" >> estado/ejecuciones.log
+          fi
+          rm -f accion_elegida.txt
 
       - name: Latido y estado
         run: date -u +"%Y-%m-%dT%H:%M:%SZ" > estado/ultimo_latido.txt   # también evita que GitHub desactive el programador por inactividad
@@ -129,7 +163,7 @@ jobs:
       - name: ¿Cambió lo publicable?
         id: cambio
         run: |
-          git add -A estado
+          git add -A estado disparar/accion.txt      # accion.txt solo cambia si se desarmó una instrucción extraordinaria
           if git diff --cached --quiet -- estado/publicable; then echo "cambio=no" >> "$GITHUB_OUTPUT"; else echo "cambio=si" >> "$GITHUB_OUTPUT"; fi
 
       - name: Guardar el estado en el repositorio
@@ -137,7 +171,9 @@ jobs:
           git config user.name "servidor-horarios"
           git config user.email "servidor-horarios@users.noreply.github.com"
           git commit -m "estado $(date -u +%F) ($(cat estado/ultimo_latido.txt))" || echo "sin cambios que guardar"
-          git push
+          # Si main se movió mientras trabajábamos (p. ej. alguien subió un cambio), se reintenta UNA vez sobre la versión actual: los
+          # archivos de estado no chocan con los de código. Si aun así falla, el trabajo queda en rojo y NO se despliega nada en Pages.
+          git push || { echo "main se movió: se reintenta una vez sobre la versión actual"; git pull --rebase -q origin main && git push; }
 
       - name: Preparar lo que se publica (solo estado/publicable)
         if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''

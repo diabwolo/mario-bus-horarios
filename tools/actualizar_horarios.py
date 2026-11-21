@@ -703,6 +703,13 @@ def restaurar_version(version, salida=SALIDA, claves=None):
     if not os.path.isdir(origen):
         raise Rechazo(f"No hay ninguna versión «{version}» en historial/ (hay: {sorted(os.listdir(carpetas.historial))})")
     man = verificar_paquete(origen, publica)  # la firma original también debe ser válida: no se restaura nada dañado
+    # Una PRUEBA nunca sustituye a una publicación OFICIAL (ni a algo ilegible que podría serlo). Restaurar una oficial sí vale siempre.
+    if man.get("estado") == "PRUEBA_CONTROLADA" and os.path.isdir(carpetas.publicable):
+        man_pub = leer_json(os.path.join(carpetas.publicable, "manifest.json"), {}) or {}
+        if man_pub.get("estado") != "PRUEBA_CONTROLADA":
+            raise Rechazo("La versión «%s» es una PRUEBA y ahora hay publicada una OFICIAL (estado «%s», versión %s) o ilegible: "
+                          "una restauración no puede sustituir lo oficial por una prueba"
+                          % (version, man_pub.get("estado", "ilegible"), man_pub.get("version_gtfs", "?")))
     actual = (leer_json(os.path.join(carpetas.publicable, "manifest.json"), {}) or {}).get("secuencia", 0)
     man.update({"secuencia": max(int(time.time()), actual + 1, man.get("secuencia", 0) + 1), "restaurada_de": version,
                 "restaurada_el": datetime.datetime.now().astimezone().isoformat(timespec="seconds")})
@@ -894,6 +901,13 @@ def main():
     zip_arg = _opt(args, "--zip")
     hoy = datetime.date.fromisoformat(_opt(args, "--hoy")) if "--hoy" in args else datetime.date.today()
     dias = int(_opt(args, "--dias", DIAS_VENTANA))
+    try:
+        intento = int(os.environ.get("GITHUB_RUN_ATTEMPT") or 1)
+    except ValueError:
+        intento = 1
+    if intento > 1:  # segunda capa (la primera es el paso «Vigencia» del workflow): una reejecución usa código y estado de cuando se creó
+        print(f"RESULTADO: RECHAZADO · reejecución (intento {intento}): no se hace nada con código ni estado antiguos")
+        return 1
     prohibido = acciones_no_permitidas(args, os.environ.get("MARIOBUS_EVENTO"), os.environ.get("MARIOBUS_ORIGEN"))
     if prohibido:  # antes de tocar nada
         print("RESULTADO: RECHAZADO · acción no permitida:", prohibido)
