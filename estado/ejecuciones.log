@@ -15,3 +15,4 @@
 2026-11-22T07:57:19Z | ejecución #17 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: SIN_CAMBIOS [SIN_NOVEDADES] · la fuente oficial no ha cambiado (misma fecha y tamaño): no se descarga ni se convierte nada
 2026-11-22T12:40:34Z | ejecución #18 | evento=schedule | origen=- | cron='17 4 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-22T16:37:26Z | ejecución #19 | evento=schedule | origen=- | cron='43 8 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
+2026-11-22T21:17:45Z | ejecución #20 | evento=schedule | origen=- | cron='47 15 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
