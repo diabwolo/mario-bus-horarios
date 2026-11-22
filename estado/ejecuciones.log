@@ -12,3 +12,4 @@
 2026-11-21T21:13:17Z | ejecución #14 | evento=schedule | origen=- | cron='47 15 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-22T01:27:50Z | ejecución #15 | evento=schedule | origen=- | cron='29 21 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-22T02:15:39Z | ejecución #16 | evento=workflow_dispatch | origen=respaldo-externo | cron='' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
+2026-11-22T07:57:19Z | ejecución #17 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: SIN_CAMBIOS [SIN_NOVEDADES] · la fuente oficial no ha cambiado (misma fecha y tamaño): no se descarga ni se convierte nada
