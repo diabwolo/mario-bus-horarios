@@ -27,3 +27,4 @@
 2026-11-24T10:52:09Z | ejecución #29 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-24T11:03:58Z | ejecución #30 | evento=push | origen=- | cron='' | acción=prueba_controlada | paso=success | Publicada la PRUEBA CONTROLADA (secuencia 1795518238 ) en publicable/. Marcada como prueba; no es un feed del Consorcio.
 2026-11-24T11:03:58Z | ejecución #30 | evento=push | origen=desarmado | cron='' | acción=prueba_controlada | paso=success | instrucción extraordinaria «prueba_controlada» terminada CORRECTAMENTE: disparar/accion.txt restablecido a ciclo
+2026-11-24T14:57:58Z | ejecución #31 | evento=schedule | origen=- | cron='17 4 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
