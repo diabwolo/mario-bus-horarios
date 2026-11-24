@@ -24,3 +24,4 @@
 2026-11-24T02:15:42Z | ejecución #26 | evento=workflow_dispatch | origen=respaldo-externo | cron='' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-24T02:36:33Z | ejecución #27 | evento=schedule | origen=- | cron='47 15 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-24T05:23:30Z | ejecución #28 | evento=schedule | origen=- | cron='29 21 * * *' | acción=ciclo | paso=success | RESULTADO: SIN_CAMBIOS [SIN_NOVEDADES] · la fuente oficial no ha cambiado (misma fecha y tamaño): no se descarga ni se convierte nada
+2026-11-24T10:52:09Z | ejecución #29 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
