@@ -1,0 +1,1 @@
+C3 24/11/2026: re-firmar los horarios de PRUEBA con la clave de prueba nueva (K3). Solo afecta a /prueba/.
