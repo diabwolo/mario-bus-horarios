@@ -7,17 +7,17 @@
   {
    "bytes": 12253,
    "nombre": "calendario.json",
-   "sha256": "a5ea1129f60e09758b80ac3b948228f4ddb6200e61832c6674f32e6b0a2d3461"
+   "sha256": "9a71947b49bf45734b1b986608209faac20d01eaa86833f2df50a8e51ed80c6d"
   }
  ],
  "esquema": 1,
  "estado": "PRUEBA_CONTROLADA",
- "generado": "2026-11-24T11:01:57+00:00",
+ "generado": "2026-11-24T11:05:57+00:00",
  "prueba_controlada": true,
- "secuencia": 1795518117,
+ "secuencia": 1795518357,
  "verificacion": {
   "estado": "COMPROBADO",
-  "fecha": "2026-11-24T11:01:57+00:00",
+  "fecha": "2026-11-24T11:05:57+00:00",
   "pendientes": [
    "Fiestas locales de Collado Villalba 2027: aún no publicadas en el BOCM"
   ]
