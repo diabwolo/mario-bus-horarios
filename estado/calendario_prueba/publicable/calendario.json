@@ -1,0 +1,400 @@
+{
+ "esquema": 1,
+ "version": "20261124",
+ "generado": "2026-11-24T11:01:57+00:00",
+ "municipio": {
+  "id": "collado_villalba",
+  "nombre": "Collado Villalba"
+ },
+ "anios": {
+  "2026": {
+   "festivos": [
+    {
+     "fecha": "2026-01-01",
+     "ambito": "nacional",
+     "nombre": "Año Nuevo",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Año Nuevo»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-01-06",
+     "ambito": "nacional",
+     "nombre": "Epifanía del Señor",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Epifanía del Señor»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-04-02",
+     "ambito": "autonomico",
+     "nombre": "Jueves Santo",
+     "descripcion": "Fiesta laboral de la Comunidad de Madrid (Decreto 75/2025).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-04-03",
+     "ambito": "nacional",
+     "nombre": "Viernes Santo",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Viernes Santo»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-05-01",
+     "ambito": "nacional",
+     "nombre": "Fiesta del Trabajo",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Fiesta del Trabajo»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-05-02",
+     "ambito": "autonomico",
+     "nombre": "Fiesta de la Comunidad de Madrid",
+     "descripcion": "Fiesta laboral de la Comunidad de Madrid (Ley 8/1984) (Decreto 75/2025).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-06-12",
+     "ambito": "local",
+     "nombre": "Fiesta local de Collado Villalba",
+     "descripcion": "Fiesta local de Collado Villalba (Resolución de 2 de diciembre de 2025).",
+     "fuente": "bocm_locales",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-07-24",
+     "ambito": "local",
+     "nombre": "Fiesta local de Collado Villalba",
+     "descripcion": "Fiesta local de Collado Villalba (Resolución de 2 de diciembre de 2025).",
+     "fuente": "bocm_locales",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-08-15",
+     "ambito": "nacional",
+     "nombre": "Asunción de la Virgen",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Asunción de la Virgen»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-10-12",
+     "ambito": "nacional",
+     "nombre": "Fiesta Nacional de España",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Fiesta Nacional de España»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-11-02",
+     "ambito": "nacional",
+     "nombre": "Traslado de Todos los Santos",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Día siguiente a Todos los Santos»). Se disfruta en lunes porque la fiesta cayó en domingo.",
+     "fuente": "bocm_decreto",
+     "trasladada": true
+    },
+    {
+     "fecha": "2026-12-07",
+     "ambito": "nacional",
+     "nombre": "Traslado del Día de la Constitución Española",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Lunes siguiente al Día de la Constitución»). Se disfruta en lunes porque la fiesta cayó en domingo.",
+     "fuente": "bocm_decreto",
+     "trasladada": true
+    },
+    {
+     "fecha": "2026-12-08",
+     "ambito": "nacional",
+     "nombre": "Día de la Inmaculada Concepción",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Inmaculada Concepción»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2026-12-25",
+     "ambito": "nacional",
+     "nombre": "Natividad del Señor",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Natividad del Señor»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    }
+   ],
+   "locales": {
+    "estado": "PUBLICADO",
+    "fuente": "bocm_locales"
+   }
+  },
+  "2027": {
+   "festivos": [
+    {
+     "fecha": "2027-01-01",
+     "ambito": "nacional",
+     "nombre": "Año Nuevo",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Año Nuevo»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-01-06",
+     "ambito": "nacional",
+     "nombre": "Epifanía del Señor",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Epifanía del Señor»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-03-19",
+     "ambito": "autonomico",
+     "nombre": "San José",
+     "descripcion": "Fiesta laboral de la Comunidad de Madrid (Decreto 82/2026).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-03-25",
+     "ambito": "autonomico",
+     "nombre": "Jueves Santo",
+     "descripcion": "Fiesta laboral de la Comunidad de Madrid (Decreto 82/2026).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-03-26",
+     "ambito": "nacional",
+     "nombre": "Viernes Santo",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Viernes Santo»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-05-01",
+     "ambito": "nacional",
+     "nombre": "Fiesta del Trabajo",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Fiesta del Trabajo»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-08-16",
+     "ambito": "nacional",
+     "nombre": "Traslado de la Asunción de la Virgen",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Lunes siguiente a asunción de la Virgen»). Se disfruta en lunes porque la fiesta cayó en domingo.",
+     "fuente": "bocm_decreto",
+     "trasladada": true
+    },
+    {
+     "fecha": "2027-10-12",
+     "ambito": "nacional",
+     "nombre": "Fiesta Nacional de España",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Fiesta Nacional de España»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-11-01",
+     "ambito": "nacional",
+     "nombre": "Día de Todos los Santos",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Todos los Santos»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-12-06",
+     "ambito": "nacional",
+     "nombre": "Día de la Constitución Española",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Día de la Constitución Española»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-12-08",
+     "ambito": "nacional",
+     "nombre": "Inmaculada Concepción",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Inmaculada Concepción»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    },
+    {
+     "fecha": "2027-12-25",
+     "ambito": "nacional",
+     "nombre": "Natividad del Señor",
+     "descripcion": "Fiesta laboral NACIONAL (BOE: «Natividad del Señor»).",
+     "fuente": "bocm_decreto",
+     "trasladada": false
+    }
+   ],
+   "locales": {
+    "estado": "PENDIENTE",
+    "motivo": "Aún no publicados en el BOCM"
+   }
+  }
+ },
+ "fuentes": {
+  "2026": {
+   "boe": {
+    "referencia": "Resolución de 17 de octubre de 2025, de la Dirección General de Trabajo (BOE-A-2025-21667, BOE núm. 259 de 28/10/2025)",
+    "url": "https://www.boe.es/boe/dias/2025/10/28/pdfs/BOE-A-2025-21667.pdf",
+    "sha256": "31057b03d927672352b3a5163b30e03d75bddacc3a489626f28f14535ce0facf"
+   },
+   "bocm_decreto": {
+    "referencia": "Decreto 75/2025, de 24 de septiembre, del Consejo de Gobierno (BOCM núm. 229 de 25/09/2025)",
+    "url": "https://www.bocm.es/boletin/CM_Orden_BOCM/2025/09/25/BOCM-20250925-16.PDF",
+    "sha256": "fd266e11edf124ca125b8d4a79a07b681854d9c648898237f8b73a2f9e417261"
+   },
+   "bocm_locales": {
+    "referencia": "Resolución de 2 de diciembre de 2025, de la Dirección General de Trabajo (BOCM núm. 296 de 12/12/2025)",
+    "url": "https://www.bocm.es/boletin/CM_Orden_BOCM/2025/12/12/BOCM-20251212-34.PDF",
+    "sha256": "03af6ad5d49ea5988487d3b4fcb67f2659853829a6c185b4ea4a49484cef5576"
+   }
+  },
+  "2027": {
+   "boe": {
+    "referencia": "Resolución de 8 de octubre de 2026, de la Dirección General de Trabajo (BOE-A-2026-21254, BOE núm. 254 de 13/10/2026)",
+    "url": "https://www.boe.es/boe/dias/2026/10/13/pdfs/BOE-A-2026-21254.pdf",
+    "sha256": "cf9ee3c1407fbdff346a5ffb287660c181435cb35485bb5f3733c99d326063c6"
+   },
+   "bocm_decreto": {
+    "referencia": "Decreto 82/2026, de 30 de septiembre, del Consejo de Gobierno (BOCM núm. 234 de 01/10/2026)",
+    "url": "https://www.bocm.es/boletin/CM_Orden_BOCM/2026/10/01/BOCM-20261001-19.PDF",
+    "sha256": "4f370173052151c187bcbd286b017b4f882517a2935daa7240b588f58e1ed036"
+   }
+  }
+ },
+ "verificacion": {
+  "estado": "COMPROBADO",
+  "fecha": "2026-11-24T11:01:57+00:00",
+  "por": "tools/actualizar_calendario.py",
+  "comprobaciones": {
+   "2026": [
+    {
+     "id": "huella_boe",
+     "ok": true,
+     "detalle": "sha256 31057b03d9276723… coincide con fuentes.json"
+    },
+    {
+     "id": "huella_bocm_decreto",
+     "ok": true,
+     "detalle": "sha256 fd266e11edf124ca… coincide con fuentes.json"
+    },
+    {
+     "id": "huella_bocm_locales",
+     "ok": true,
+     "detalle": "sha256 03af6ad5d49ea598… coincide con fuentes.json"
+    },
+    {
+     "id": "decreto_del_anio",
+     "ok": true,
+     "detalle": "El decreto es de fiestas laborales de 2026"
+    },
+    {
+     "id": "boe_del_anio",
+     "ok": true,
+     "detalle": "La resolución del BOE es de 2026 y trae 10 fiestas nacionales"
+    },
+    {
+     "id": "madrid_12_fiestas",
+     "ok": true,
+     "detalle": "El decreto de Madrid trae 12 fiestas (debe haber 12)"
+    },
+    {
+     "id": "madrid_sin_repetidas",
+     "ok": true,
+     "detalle": "Fechas distintas: 12 de 12"
+    },
+    {
+     "id": "madrid_dia_semana",
+     "ok": true,
+     "detalle": "Día de la semana del decreto coherente con el calendario"
+    },
+    {
+     "id": "boe_10_nacionales",
+     "ok": true,
+     "detalle": "El BOE trae 10 fiestas nacionales (deben ser 10)"
+    },
+    {
+     "id": "nacionales_en_madrid",
+     "ok": true,
+     "detalle": "Las 10 fiestas nacionales del BOE están todas en el decreto de Madrid"
+    },
+    {
+     "id": "madrid_solo_propias_conocidas",
+     "ok": true,
+     "detalle": "Fiestas propias de Madrid: Jueves Santo, Fiesta de la Comunidad de Madrid"
+    },
+    {
+     "id": "locales_dos_fechas",
+     "ok": true,
+     "detalle": "Collado Villalba: 2026-06-12, 2026-07-24"
+    },
+    {
+     "id": "locales_no_coinciden_con_regionales",
+     "ok": true,
+     "detalle": "Sin coincidencias con festivos regionales"
+    }
+   ],
+   "2027": [
+    {
+     "id": "huella_boe",
+     "ok": true,
+     "detalle": "sha256 cf9ee3c1407fbdff… coincide con fuentes.json"
+    },
+    {
+     "id": "huella_bocm_decreto",
+     "ok": true,
+     "detalle": "sha256 4f370173052151c1… coincide con fuentes.json"
+    },
+    {
+     "id": "decreto_del_anio",
+     "ok": true,
+     "detalle": "El decreto es de fiestas laborales de 2027"
+    },
+    {
+     "id": "boe_del_anio",
+     "ok": true,
+     "detalle": "La resolución del BOE es de 2027 y trae 10 fiestas nacionales"
+    },
+    {
+     "id": "madrid_12_fiestas",
+     "ok": true,
+     "detalle": "El decreto de Madrid trae 12 fiestas (debe haber 12)"
+    },
+    {
+     "id": "madrid_sin_repetidas",
+     "ok": true,
+     "detalle": "Fechas distintas: 12 de 12"
+    },
+    {
+     "id": "madrid_dia_semana",
+     "ok": true,
+     "detalle": "Día de la semana del decreto coherente con el calendario"
+    },
+    {
+     "id": "boe_10_nacionales",
+     "ok": true,
+     "detalle": "El BOE trae 10 fiestas nacionales (deben ser 10)"
+    },
+    {
+     "id": "nacionales_en_madrid",
+     "ok": true,
+     "detalle": "Las 10 fiestas nacionales del BOE están todas en el decreto de Madrid"
+    },
+    {
+     "id": "madrid_solo_propias_conocidas",
+     "ok": true,
+     "detalle": "Fiestas propias de Madrid: San José, Jueves Santo"
+    },
+    {
+     "id": "locales_pendientes",
+     "ok": true,
+     "detalle": "No hay resolución de locales de 2027 todavía: quedan PENDIENTES (no se inventan)"
+    }
+   ]
+  },
+  "pendientes": [
+   "Fiestas locales de Collado Villalba 2027: aún no publicadas en el BOCM"
+  ]
+ }
+}
