@@ -1,0 +1,205 @@
+# Calendario laboral y festivos de Mario-Bus. Workflow SEPARADO del de horarios: si falla el calendario, los horarios ni se enteran.
+#
+# Tres modos (solo «solo_validar» corre solo; los otros dos los lanza Mario a mano):
+#   solo_validar        Genera el paquete desde las fuentes OFICIALES (BOE y BOCM), lo firma con la clave de PRODUCCIÓN y pasa la puerta de
+#                       validación. NO publica nada. (Es lo que hace el cron semanal.)
+#   publicar_prueba     Igual, pero marcado PRUEBA_CONTROLADA y firmado con la clave de PRUEBA: va a /prueba/calendario/ (solo pruebaR8).
+#   publicar_produccion Va a /calendario/ (lo que descarga Google Play). Pide la APROBACIÓN MANUAL de Mario (entorno «calendario-produccion»).
+#
+# Nada incompleto llega a producción: la puerta (tools/validar_calendario_publicable.py) exige COMPLETO + COMPROBADO + firma válida +
+# SHA-256 + todos los años que ya lleva la app + las fiestas locales de TODOS los años publicadas. Mientras el BOCM no publique los locales
+# de un año, el calendario de ese año NO sale (la app sigue con el suyo y avisa de lo pendiente).
+name: Calendario Mario-Bus
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"            # cada lunes: solo valida, no publica
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "solo_validar · publicar_prueba · publicar_produccion"
+        type: choice
+        options: [solo_validar, publicar_prueba, publicar_produccion]
+        default: solo_validar
+      anios:
+        description: "Años a incluir (separados por espacio). Tienen que incluir TODOS los que ya lleva la app."
+        type: string
+        default: "2026 2027"
+
+concurrency:
+  group: horarios                   # el mismo grupo que horarios.yml: nunca dos despliegues a la vez
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  PYTHONUTF8: "1"
+  # Años que YA lleva la app en su calendario.json: mantener igual que ese archivo (la app usa un paquete entero o el suyo, no los mezcla).
+  ANIOS_MINIMOS: "2026 2027"
+  # Claves PÚBLICAS (no son secretas): con ellas se comprueba la firma ANTES de publicar. La de producción es la de la app.
+  PUBLICA_PRODUCCION: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+n+1TGaLq2P+tnGMUb5HkjPxQP96w0H7480e6x+ObVpxYnXlEnVbtRLBHMyeyPBLDrUJyugBTLNFRrYZhYWX+A=="
+  PUBLICA_PRUEBA: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENk4v+0oi3nS60YvRQHcjj4G7VspPcM9fu5KTME105WHoNAEhlaoLHi7Agh2slBVl5ce94t1BdDhrhPf3gYZIUQ=="
+
+jobs:
+  preparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      modo: ${{ steps.modo.outputs.modo }}
+      publicable: ${{ steps.puerta.outputs.publicable }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt pypdf
+
+      - name: Modo
+        id: modo
+        env:
+          ENTRADA: ${{ github.event.inputs.modo }}
+        run: echo "modo=${ENTRADA:-solo_validar}" >> "$GITHUB_OUTPUT"      # el cron (sin entrada) es siempre solo_validar
+
+      - name: Pruebas del servidor (separación y puerta del calendario)
+        run: python tools/tests/test_calendario_servidor.py
+
+      - name: Generar el paquete desde las fuentes oficiales y firmarlo
+        env:
+          MODO: ${{ steps.modo.outputs.modo }}
+          ANIOS: ${{ github.event.inputs.anios || env.ANIOS_MINIMOS }}
+          CLAVE_PRODUCCION: ${{ secrets.HORARIOS_FIRMA_PRIVADA }}
+          CLAVE_PRUEBA: ${{ secrets.HORARIOS_FIRMA_PRUEBA }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$MODO" = "publicar_prueba" ]; then CARPETA=claves_prueba; SECRETO="$CLAVE_PRUEBA"; else CARPETA=claves; SECRETO="$CLAVE_PRODUCCION"; fi
+          test -n "$SECRETO" || { echo "::error::Falta el secreto de firma de este modo ($MODO)"; exit 1; }
+          mkdir -p "$CARPETA"
+          printf '%s\n' "$SECRETO" > "$CARPETA/horarios-firma-privada.pem"
+          chmod 600 "$CARPETA/horarios-firma-privada.pem"
+          # Se genera SIN firmar, se ajusta el estado si es de prueba y se firma al final (la firma cubre el manifiesto ya definitivo)
+          python tools/actualizar_calendario.py --anios $ANIOS --descargar --salida bruto
+          test -f bruto/publicable/manifest.json || { echo "::error::El generador no dejó un paquete publicable (mira 'pendiente_revision')"; exit 1; }
+          if [ "$MODO" = "publicar_prueba" ]; then
+            python tools/marcar_prueba_calendario.py bruto/publicable/manifest.json
+          fi
+          python tools/firma_manifiesto.py --firmar bruto/publicable/manifest.json --carpeta "$CARPETA"
+
+      - name: Puerta de validación (independiente del generador)
+        id: puerta
+        env:
+          MODO: ${{ steps.modo.outputs.modo }}
+          EVENTO: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ "$MODO" = "publicar_prueba" ]; then
+            # El calendario de PRUEBA se marca PRUEBA_CONTROLADA y se firma con la clave de PRUEBA: solo lo acepta pruebaR8
+            # (los locales pendientes se toleran SOLO aquí, nunca en producción). Se comprueba su firma con la clave pública de PRUEBA.
+            python tools/validar_calendario_prueba.py --paquete bruto/publicable --publica "$PUBLICA_PRUEBA" || { echo "publicable=no" >> "$GITHUB_OUTPUT"; exit 1; }
+            echo "publicable=si" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ACTUAL=0
+          if [ -f estado/calendario/publicable/manifest.json ]; then
+            ACTUAL=$(python -c "import json;print(json.load(open('estado/calendario/publicable/manifest.json')).get('secuencia',0))")
+          fi
+          SALIDA=$(python tools/validar_calendario_publicable.py --paquete bruto/publicable --publica "$PUBLICA_PRODUCCION" --anios-minimos $ANIOS_MINIMOS --secuencia-actual "$ACTUAL"); CODIGO=$?
+          echo "$SALIDA"
+          {
+            echo "### Calendario: resultado de la puerta"
+            echo '```'; echo "$SALIDA"; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ $CODIGO -eq 0 ]; then
+            echo "publicable=si" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "publicable=no" >> "$GITHUB_OUTPUT"
+          # Si SOLO falta algo oficial por publicar (paquete «incompleto»), es lo esperado: aviso, no error. Cualquier otro motivo (firma, SHA, estado…) es un error.
+          if echo "$SALIDA" | grep -E '^  - ' | grep -qv 'incompleto'; then
+            echo "::error::El calendario no pasa la puerta por un motivo que NO es «falta publicar algo oficial»"; exit 1
+          fi
+          echo "::notice::Calendario NO publicado: está incompleto (falta algo oficial por publicar). La app sigue con el suyo."
+          if [ "$EVENTO" = "workflow_dispatch" ] && [ "$MODO" = "publicar_produccion" ]; then
+            echo "::error::Pediste publicar en producción y el calendario está incompleto: no se publica"; exit 1
+          fi
+          exit 0
+
+      - name: Guardar el paquete
+        if: steps.puerta.outputs.publicable == 'si'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paquete-calendario
+          path: bruto/publicable          # solo calendario.json, manifest.json y manifest.sig: ninguna clave
+          if-no-files-found: error
+
+      - name: Borrar las claves del disco
+        if: always()
+        run: rm -rf claves claves_prueba
+
+  aprobar:
+    # Solo producción. El entorno «calendario-produccion» tiene a Mario como revisor obligatorio: hasta que apruebe, nada se publica.
+    needs: preparar
+    if: needs.preparar.outputs.modo == 'publicar_produccion' && needs.preparar.outputs.publicable == 'si'
+    runs-on: ubuntu-latest
+    environment: calendario-produccion
+    steps:
+      - name: Aprobación del propietario
+        run: echo "Aprobado por el propietario, se publica el calendario en /calendario/"
+
+  desplegar:
+    needs: [preparar, aprobar]
+    if: ${{ !cancelled() && needs.preparar.result == 'success' && (needs.aprobar.result == 'success' || needs.aprobar.result == 'skipped') && needs.preparar.outputs.publicable == 'si' && needs.preparar.outputs.modo != 'solo_validar' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: paquete-calendario
+          path: paquete
+
+      - name: Colocar el paquete en su carpeta de estado (producción o pruebas, nunca la otra)
+        env:
+          MODO: ${{ needs.preparar.outputs.modo }}
+        run: |
+          set -euo pipefail
+          if [ "$MODO" = "publicar_produccion" ]; then DEST=estado/calendario/publicable; else DEST=estado/calendario_prueba/publicable; fi
+          mkdir -p "$DEST"
+          rm -rf "$DEST"/*
+          cp paquete/calendario.json paquete/manifest.json paquete/manifest.sig "$DEST"/
+          echo "Paquete colocado en $DEST"
+
+      - name: Ensamblar el sitio (producción y pruebas en rutas separadas)
+        run: python tools/ensamblar_sitio.py --repo . --destino _site
+
+      - name: Guardar el estado en el repositorio
+        run: |
+          git config user.name "servidor-horarios"
+          git config user.email "servidor-horarios@users.noreply.github.com"
+          git add -A estado
+          git commit -m "calendario ${{ needs.preparar.outputs.modo }} ($(date -u +%FT%TZ))" || echo "sin cambios que guardar"
+          git pull --rebase -q origin main && git push
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: pages
+        uses: actions/deploy-pages@v4

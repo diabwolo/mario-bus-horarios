@@ -1,0 +1,41 @@
+{
+  "_comentario": "Fuentes OFICIALES del calendario de Mario-Bus. Cada año se añade su bloque (el script actualizar_calendario.py comprueba la huella sha256 de cada documento). Solo BOE y BOCM: nada de webs de terceros.",
+  "municipio": {"id": "collado_villalba", "nombre": "Collado Villalba"},
+  "anios": {
+    "2026": {
+      "boe": {
+        "referencia": "Resolución de 17 de octubre de 2025, de la Dirección General de Trabajo (BOE-A-2025-21667, BOE núm. 259 de 28/10/2025)",
+        "url": "https://www.boe.es/boe/dias/2025/10/28/pdfs/BOE-A-2025-21667.pdf",
+        "archivo": "fuentes/2026/boe_resolucion.pdf",
+        "sha256": "31057b03d927672352b3a5163b30e03d75bddacc3a489626f28f14535ce0facf"
+      },
+      "bocm_decreto": {
+        "referencia": "Decreto 75/2025, de 24 de septiembre, del Consejo de Gobierno (BOCM núm. 229 de 25/09/2025)",
+        "url": "https://www.bocm.es/boletin/CM_Orden_BOCM/2025/09/25/BOCM-20250925-16.PDF",
+        "archivo": "fuentes/2026/bocm_decreto.pdf",
+        "sha256": "fd266e11edf124ca125b8d4a79a07b681854d9c648898237f8b73a2f9e417261"
+      },
+      "bocm_locales": {
+        "referencia": "Resolución de 2 de diciembre de 2025, de la Dirección General de Trabajo (BOCM núm. 296 de 12/12/2025)",
+        "url": "https://www.bocm.es/boletin/CM_Orden_BOCM/2025/12/12/BOCM-20251212-34.PDF",
+        "archivo": "fuentes/2026/bocm_locales.pdf",
+        "sha256": "03af6ad5d49ea5988487d3b4fcb67f2659853829a6c185b4ea4a49484cef5576"
+      }
+    },
+    "2027": {
+      "boe": {
+        "referencia": "Resolución de 8 de octubre de 2026, de la Dirección General de Trabajo (BOE-A-2026-21254, BOE núm. 254 de 13/10/2026)",
+        "url": "https://www.boe.es/boe/dias/2026/10/13/pdfs/BOE-A-2026-21254.pdf",
+        "archivo": "fuentes/2027/boe_resolucion.pdf",
+        "sha256": "cf9ee3c1407fbdff346a5ffb287660c181435cb35485bb5f3733c99d326063c6"
+      },
+      "bocm_decreto": {
+        "referencia": "Decreto 82/2026, de 30 de septiembre, del Consejo de Gobierno (BOCM núm. 234 de 01/10/2026)",
+        "url": "https://www.bocm.es/boletin/CM_Orden_BOCM/2026/10/01/BOCM-20261001-19.PDF",
+        "archivo": "fuentes/2027/bocm_decreto.pdf",
+        "sha256": "4f370173052151c187bcbd286b017b4f882517a2935daa7240b588f58e1ed036"
+      },
+      "bocm_locales": null
+    }
+  }
+}

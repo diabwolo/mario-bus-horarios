@@ -80,11 +80,18 @@ jobs:
       - name: Clave de firma (desde el secreto)
         env:
           CLAVE: ${{ secrets.HORARIOS_FIRMA_PRIVADA }}
+          CLAVE_PRUEBA: ${{ secrets.HORARIOS_FIRMA_PRUEBA }}
         run: |
           test -n "$CLAVE" || { echo "::error::Falta el secreto HORARIOS_FIRMA_PRIVADA"; exit 1; }
           mkdir -p claves
           printf '%s\n' "$CLAVE" > claves/horarios-firma-privada.pem
           chmod 600 claves/horarios-firma-privada.pem
+          # 1.84: clave de PRUEBA, distinta de la de producción. Solo firma lo que va a /prueba/. Si falta, solo falla la acción prueba_controlada.
+          if [ -n "$CLAVE_PRUEBA" ]; then
+            mkdir -p claves_prueba
+            printf '%s\n' "$CLAVE_PRUEBA" > claves_prueba/horarios-firma-privada.pem
+            chmod 600 claves_prueba/horarios-firma-privada.pem
+          fi
 
       - name: Hacer lo pedido
         id: trabajo
@@ -111,7 +118,8 @@ jobs:
           case "$ACCION" in
             ciclo)             python tools/actualizar_horarios.py --salida estado 2>&1 | tee salida_trabajo.txt ;;
             ciclo_forzado)     python tools/actualizar_horarios.py --salida estado --forzar 2>&1 | tee salida_trabajo.txt ;;
-            prueba_controlada) python tools/actualizar_horarios.py --salida estado --prueba-controlada prueba_controlada --motivo "prueba del recorrido servidor-móvil" 2>&1 | tee salida_trabajo.txt ;;
+            prueba_controlada) test -f claves_prueba/horarios-firma-privada.pem || { echo "::error::Falta el secreto HORARIOS_FIRMA_PRUEBA: la prueba se firma con la clave de PRUEBA, nunca con la de producción"; exit 1; }
+                               python tools/actualizar_horarios.py --salida estado --prueba-controlada prueba_controlada --claves claves_prueba --motivo "prueba del recorrido servidor-móvil" 2>&1 | tee salida_trabajo.txt ;;
             restaurar)         python tools/actualizar_horarios.py --salida estado --restaurar "$VERSION" 2>&1 | tee salida_trabajo.txt ;;
             *)                 echo "acción desconocida"; exit 1 ;;
           esac
@@ -137,7 +145,7 @@ jobs:
 
       - name: Borrar la clave del disco
         if: always()
-        run: rm -rf claves
+        run: rm -rf claves claves_prueba
 
       # P3 · DESARMADO. Tras una acción extraordinaria lanzada por un push (forzar, prueba, restaurar), disparar/accion.txt vuelve a `ciclo`
       # en el mismo commit de estado (con el GITHUB_TOKEN, que no dispara otra ejecución). Se desarma también si la acción FALLÓ (no se
@@ -175,9 +183,11 @@ jobs:
           # archivos de estado no chocan con los de código. Si aun así falla, el trabajo queda en rojo y NO se despliega nada en Pages.
           git push || { echo "main se movió: se reintenta una vez sobre la versión actual"; git pull --rebase -q origin main && git push; }
 
-      - name: Preparar lo que se publica (solo estado/publicable)
+      # 1.84: el sitio se ENSAMBLA con producción y pruebas en rutas separadas (/ y /calendario/ solo definitivos; /prueba/ solo pruebas).
+      # Si algo no cuadra, el ensamblador falla y NO se despliega nada: Pages sigue sirviendo la última versión válida.
+      - name: Preparar lo que se publica (producción en /, pruebas en /prueba/)
         if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''
-        run: mkdir -p _site && cp -r estado/publicable/. _site/
+        run: python tools/ensamblar_sitio.py --repo . --destino _site
 
       - uses: actions/configure-pages@v5
         if: steps.cambio.outputs.cambio == 'si' && hashFiles('estado/publicable/manifest.json') != ''
