@@ -33,3 +33,4 @@
 2026-11-25T02:15:55Z | ejecución #34 | evento=workflow_dispatch | origen=respaldo-externo | cron='' | acción=ciclo | paso=failure | RESULTADO: RECHAZADO [VALIDACION_DEL_CONTENIDO] · Servicio que había y ya no está (13): 181: caen más de un 50 % las expediciones los sábado; 250: caen más de un 50 % las expediciones los lunes, martes, miércoles, jueves
 2026-11-25T04:22:52Z | ejecución #35 | evento=schedule | origen=- | cron='29 21 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-25T09:47:24Z | ejecución #36 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
+2026-11-25T14:33:25Z | ejecución #37 | evento=schedule | origen=- | cron='17 4 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
