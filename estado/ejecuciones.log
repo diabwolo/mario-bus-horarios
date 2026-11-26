@@ -39,3 +39,4 @@
 2026-11-26T02:15:53Z | ejecución #40 | evento=workflow_dispatch | origen=respaldo-externo | cron='' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-26T03:39:53Z | ejecución #41 | evento=schedule | origen=- | cron='29 21 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-26T09:27:57Z | ejecución #42 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
+2026-11-26T13:59:50Z | ejecución #43 | evento=schedule | origen=- | cron='17 4 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
