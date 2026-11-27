@@ -41,3 +41,4 @@
 2026-11-26T09:27:57Z | ejecución #42 | evento=schedule | origen=- | cron='11 1 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-26T13:59:50Z | ejecución #43 | evento=schedule | origen=- | cron='17 4 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
 2026-11-26T18:38:03Z | ejecución #44 | evento=schedule | origen=- | cron='43 8 * * *' | acción=ciclo | paso=success | RESULTADO: OMITIDO [OMITIDO] · ya se comprobó hace menos de 20 h
+2026-11-27T00:02:02Z | ejecución #45 | evento=schedule | origen=- | cron='47 15 * * *' | acción=ciclo | paso=success | RESULTADO: SIN_CAMBIOS [SIN_NOVEDADES] · la fuente oficial no ha cambiado (misma fecha y tamaño): no se descarga ni se convierte nada
